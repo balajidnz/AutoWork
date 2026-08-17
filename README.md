@@ -105,8 +105,28 @@ never appear in another digest. `--dry-run` never touches it.
 
 `.github/workflows/digest.yml` runs at 01:30 UTC (07:00 IST) on weekdays, then
 commits the ledger and the day's digest back to the repo. `workflow_dispatch`
-gives a manual trigger with a dry-run toggle. It needs three repository
-secrets: `SMTP_USER`, `SMTP_PASS`, `DIGEST_TO`.
+gives a manual trigger with a dry-run toggle.
+
+Repository secrets:
+
+| Secret | Required | What it is |
+| --- | --- | --- |
+| `PROFILE_JSON` | yes | The whole of `profile/profiles.json`. It is gitignored — it carries a salary and target titles — so the run has nothing to rank against without it. |
+| `SMTP_USER` / `SMTP_PASS` | for email | Gmail address and its 16-character app password. `SMTP_PASSWORD` is accepted too. |
+| `DIGEST_TO` | for email | Where the digest is sent. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | for Telegram | From `autowork telegram-setup`. |
+
+`PROFILE_JSON` holds a file, not a path — set it by redirecting the file in, and
+check it parses first, because the value cannot be read back out of GitHub
+afterwards to see what landed there:
+
+```sh
+uv run python -m json.tool profile/profiles.json > /dev/null   # fails loudly if malformed
+gh secret set PROFILE_JSON < profile/profiles.json
+```
+
+Re-set it whenever you change your profile — the wizard writes your laptop's
+copy, and the scheduled run only ever sees the secret.
 
 ## Review console
 

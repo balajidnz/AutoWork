@@ -41,15 +41,35 @@ jobs:
         env:
           PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
         run: |
-          if [ -z "$PROFILE_JSON" ]; then
-            echo "::error::PROFILE_JSON secret is not set. Generate it with:"
+          # Whitespace-only counted as set under a plain -z test, so a blank
+          # secret fell through to the JSON parse and surfaced as a decoder
+          # traceback instead of "the secret is blank".
+          if [ -z "${PROFILE_JSON//[[:space:]]/}" ]; then
+            echo "::error::PROFILE_JSON is empty or blank. Rebuild the profile and re-set it:"
+            echo "::error::  uv run autowork console      # wizard writes profile/profiles.json"
             echo "::error::  gh secret set PROFILE_JSON < profile/profiles.json"
             exit 1
           fi
           mkdir -p profile
           printf '%s' "$PROFILE_JSON" > profile/profiles.json
-          uv run python -c "import json;json.load(open('profile/profiles.json'))" \
-            || { echo "::error::PROFILE_JSON is not valid JSON"; exit 1; }
+          # A bare "not valid JSON" says nothing about which of the usual
+          # mangles happened, and the value cannot be read back out of GitHub
+          # to check by hand. Describe the shape without echoing the content.
+          if ! uv run python -c "import json;json.load(open('profile/profiles.json'))"; then
+            echo "::error::PROFILE_JSON is not valid JSON. Diagnosis:"
+            echo "::error::  bytes: $(wc -c < profile/profiles.json)"
+            echo "::error::  first 16 bytes (hex): $(head -c 16 profile/profiles.json | od -An -tx1 | tr -d '\n')"
+            head -c 3 profile/profiles.json | grep -q $'\xef\xbb\xbf' \
+              && echo "::error::  starts with a UTF-8 BOM — re-save the file as UTF-8 without BOM"
+            echo "::error::Re-set it from a known-good file:"
+            echo "::error::  uv run python -m json.tool profile/profiles.json > /dev/null && gh secret set PROFILE_JSON < profile/profiles.json"
+            exit 1
+          fi
+          # Parsing is not enough — a config with no profiles ranks nothing and
+          # would send an empty digest rather than fail. The resume-file half of
+          # profile_build.validate is skipped: resumes are gitignored and are
+          # deliberately not carried in the secret.
+          uv run python -c "import json,sys; c=json.load(open('profile/profiles.json')); sys.exit(0 if c.get('profiles') else '::error::PROFILE_JSON parses but has no profiles — nothing to rank against')" || exit 1
 
       # seen.txt and status.json used to be committed, which published which
       # roles had been surfaced and applied to. The cache keeps them across

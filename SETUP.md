@@ -268,6 +268,19 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 That is the tailoring button opening a terminal window for you. Allow it, or
 skip that feature — nothing else needs it.
 
+**The scheduled run fails with "PROFILE_JSON is empty" or "not valid JSON"**
+The `PROFILE_JSON` secret holds a copy of `profile/profiles.json`, and it went
+in blank or mangled. GitHub will not show you the value, so re-set it rather
+than trying to inspect it:
+
+```sh
+uv run autowork console                                 # rebuild the profile if it is gone
+uv run python -m json.tool profile/profiles.json > /dev/null   # must print nothing
+gh secret set PROFILE_JSON < profile/profiles.json      # "<" matters — it sends the file, not the name
+```
+
+Then re-run the workflow from the **Actions** tab with the dry-run box ticked.
+
 ---
 
 ## What it does with your data
