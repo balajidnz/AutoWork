@@ -1,0 +1,128 @@
+name: Morning digest
+
+on:
+  # 01:30 UTC == 07:00 IST, weekdays only. Postings skew to weekday mornings,
+  # and skipping weekends keeps the run count (and any metered source) down.
+  schedule:
+    - cron: "30 1 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build the workbook but do not send the email"
+        type: boolean
+        default: false
+
+concurrency:
+  group: digest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen --group dev
+
+      # The profile is not in the repository — it carries a salary and target
+      # titles, and this repository is public. It is stored as a secret and
+      # written back here so `rank` has something to score against.
+      - name: Restore profile
+        env:
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+        run: |
+          if [ -z "$PROFILE_JSON" ]; then
+            echo "::error::PROFILE_JSON secret is not set. Generate it with:"
+            echo "::error::  gh secret set PROFILE_JSON < profile/profiles.json"
+            exit 1
+          fi
+          mkdir -p profile
+          printf '%s' "$PROFILE_JSON" > profile/profiles.json
+          uv run python -c "import json;json.load(open('profile/profiles.json'))" \
+            || { echo "::error::PROFILE_JSON is not valid JSON"; exit 1; }
+
+      # seen.txt and status.json used to be committed, which published which
+      # roles had been surfaced and applied to. The cache keeps them across
+      # runs instead. A cache miss costs one duplicated digest, not data loss.
+      - name: Restore ledger
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/seen.txt
+            data/status.json
+          key: autowork-ledger-${{ github.run_id }}
+          restore-keys: autowork-ledger-
+
+      # Runs in well under a second. A broken gate does not raise — it silently
+      # hides real jobs or floods the digest — so it is worth failing the run
+      # before an email goes out rather than after.
+      - name: Tests
+        run: uv run pytest tests/ -q
+
+      # The database is rebuilt from scratch every run; only the committed
+      # ledger, watchlist and digests carry state between runs.
+      - name: Poll boards
+        run: uv run autowork poll
+
+      - name: Rank
+        run: uv run autowork rank
+
+
+      - name: Preflight
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          # Both spellings are forwarded and the code takes whichever is set.
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: uv run autowork doctor
+
+      - name: Send digest
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          # Both spellings are forwarded and the code takes whichever is set.
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          uv run autowork digest ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # Written after the digest, so a failed send does not advance the ledger.
+      - name: Save ledger
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/seen.txt
+            data/status.json
+          key: autowork-ledger-${{ github.run_id }}
+
+      - name: Commit shared data
+        run: |
+          git config user.name  "autowork[bot]"
+          git config user.email "autowork@users.noreply.github.com"
+          # Only the shared files are tracked now — the watchlist and the
+          # salary cache. Everything personal is gitignored, so this stages
+          # nothing that should not be public.
+          git add -A data/
+          # Nothing changed on a day with no new postings — not a failure.
+          if git diff --staged --quiet; then
+            echo "no changes to commit"
+          else
+            git commit -m "digest: $(date -u +%Y-%m-%d)"
+            git push
+          fi

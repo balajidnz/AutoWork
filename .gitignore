@@ -1,0 +1,30 @@
+# Derived artefacts — `autowork poll` rebuilds both in ~15s
+data/autowork.db
+data/jobs.jsonl
+
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# ---------------------------------------------------------------------------
+# Personal. This repository is public. These carry a phone number, an email
+# address, a salary, and a record of who someone applied to.
+#
+# The scheduled run does not need them committed: it rebuilds the profile from
+# the PROFILE_JSON secret and keeps the ledger in the Actions cache. Anyone
+# cloning this gets the shared watchlist and nothing of yours.
+# ---------------------------------------------------------------------------
+profile/profiles.json
+profile/profiles.backup-*.json
+profile/resume-*.md
+profile/*.pdf
+profile/*.docx
+profile/tailored/*
+!profile/tailored/.gitkeep
+
+data/status.json
+data/seen.txt
+data/contacts.json
+data/digest/
+data/tailor/

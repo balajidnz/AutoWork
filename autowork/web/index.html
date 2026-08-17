@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoWork</title>
+<style>
+/* One file, no build step, no CDN — it has to work offline on a laptop. */
+:root {
+  --bg:#fbfbfa; --panel:#fff; --line:#e4e2dd; --ink:#1a1a18; --dim:#6b6862;
+  --accent:#2f6f4f; --accent-ink:#fff; --warn:#8a5a00; --warn-bg:#fdf6e3;
+  --strong:#1d6b45; --strong-bg:#e6f4ec; --good:#1c5c86; --good-bg:#e5f0f7;
+  --fair:#8a5a00; --fair-bg:#fdf3e0; --weak:#6b6862; --weak-bg:#f0efec;
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#14151a; --panel:#1b1d23; --line:#2c2f38; --ink:#e9e8e4; --dim:#9a978f;
+    --accent:#4c9c74; --accent-ink:#0d1a13; --warn:#e0b25c; --warn-bg:#2a2317;
+    --strong:#6fd3a1; --strong-bg:#16281f; --good:#7bbde8; --good-bg:#152430;
+    --fair:#e0b25c; --fair-bg:#2a2317; --weak:#9a978f; --weak-bg:#22242b;
+  }
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a { color:inherit; }
+button { font:inherit; cursor:pointer; }
+.wrap { max-width:960px; margin:0 auto; padding:0 20px 80px; }
+
+/* ---------------------------------------------------------------- header */
+header { position:sticky; top:0; z-index:20; background:var(--bg);
+  border-bottom:1px solid var(--line); padding-top:18px; }
+/* .wrap carries 80px of bottom padding for the end of the page; the header
+   reuses the class and does not want it, or the controls float in dead space. */
+header .wrap { padding-bottom:0; }
+.brand { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
+.sub { color:var(--dim); font-size:13px; }
+.stats { margin-left:auto; color:var(--dim); font-size:13px; }
+.controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  padding:12px 0; }
+input[type=search], select, input[type=text], input[type=number] {
+  font:inherit; color:var(--ink); background:var(--panel);
+  border:1px solid var(--line); border-radius:8px; padding:7px 10px;
+}
+input[type=search] { flex:1; min-width:180px; }
+input:focus, select:focus, button:focus-visible {
+  outline:2px solid var(--accent); outline-offset:1px;
+}
+.seg { display:flex; border:1px solid var(--line); border-radius:8px;
+  overflow:hidden; background:var(--panel); }
+.seg button { border:0; background:transparent; color:var(--dim);
+  padding:7px 12px; border-right:1px solid var(--line); white-space:nowrap; }
+.seg button:last-child { border-right:0; }
+.seg button[aria-pressed=true] { background:var(--accent); color:var(--accent-ink); }
+.toggle { display:flex; align-items:center; gap:6px; color:var(--dim);
+  font-size:13px; user-select:none; cursor:pointer; }
+
+/* ------------------------------------------------------------------ rows */
+.count { padding:16px 0 8px; color:var(--dim); font-size:13px; }
+.row { border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--panel); margin-bottom:8px; overflow:hidden; }
+.row.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.row.done .head { opacity:.5; }
+.head { display:grid; grid-template-columns:34px 1fr auto; gap:12px;
+  align-items:center; padding:12px 14px; cursor:pointer; }
+.head:hover { background:color-mix(in srgb, var(--ink) 3%, transparent); }
+.pos { color:var(--dim); font-variant-numeric:tabular-nums; font-size:13px;
+  text-align:right; }
+.title { font-weight:600; letter-spacing:-.01em; }
+.meta { color:var(--dim); font-size:13px; margin-top:1px; }
+.right { display:flex; align-items:center; gap:8px; }
+.badge { font-size:12px; font-weight:600; padding:3px 9px; border-radius:20px;
+  white-space:nowrap; }
+.b-strong { color:var(--strong); background:var(--strong-bg); }
+.b-good   { color:var(--good);   background:var(--good-bg); }
+.b-fair   { color:var(--fair);   background:var(--fair-bg); }
+.b-weak   { color:var(--weak);   background:var(--weak-bg); }
+.b-state  { color:var(--dim); background:var(--weak-bg); }
+.chev { color:var(--dim); font-size:12px; width:12px; }
+
+/* ---------------------------------------------------------------- detail */
+.detail { padding:2px 14px 16px 60px; border-top:1px solid var(--line); }
+.why { list-style:none; margin:12px 0; padding:0; }
+.why li { display:flex; gap:9px; padding:2px 0; font-size:14px; }
+.why .ic { width:18px; flex:none; }
+.bar { height:6px; background:var(--weak-bg); border-radius:4px; overflow:hidden;
+  margin:4px 0 6px; }
+.bar div { height:100%; background:var(--accent); }
+.lab { font-size:13px; font-weight:600; margin-top:14px; }
+.note { font-size:13px; color:var(--dim); }
+.pay { font-size:13px; padding:8px 11px; border-radius:8px; margin-top:12px;
+  background:var(--strong-bg); color:var(--strong); }
+.pay.below { background:var(--warn-bg); color:var(--warn); }
+.alert { font-size:13px; padding:8px 11px; border-radius:8px; margin-top:12px;
+  background:var(--warn-bg); color:var(--warn); }
+.cmd { display:flex; gap:8px; align-items:center; margin-top:6px; }
+code, .cmd input { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.cmd input { flex:1; }
+.acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+.btn { border:1px solid var(--line); background:var(--panel); color:var(--ink);
+  padding:8px 14px; border-radius:8px; }
+.btn:hover { border-color:var(--accent); }
+.btn.primary { background:var(--accent); color:var(--accent-ink);
+  border-color:var(--accent); }
+.btn.small { padding:5px 10px; font-size:13px; }
+details.desc { margin-top:14px; }
+details.desc summary { cursor:pointer; color:var(--dim); font-size:13px; }
+details.desc pre { white-space:pre-wrap; font-size:13px; color:var(--dim);
+  max-height:340px; overflow:auto; margin-top:8px; }
+.empty { text-align:center; color:var(--dim); padding:60px 20px; }
+.kbd { font:12px ui-monospace,monospace; border:1px solid var(--line);
+  border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--dim); }
+.hint { color:var(--dim); font-size:12px; padding:14px 0 0; text-align:center; }
+
+/* ----------------------------------------------------------------- setup */
+.setup { max-width:620px; margin:0 auto; padding:48px 20px 80px; }
+.setup h2 { font-size:24px; letter-spacing:-.02em; margin:0 0 6px; }
+.drop { border:2px dashed var(--line); border-radius:14px; padding:44px 20px;
+  text-align:center; color:var(--dim); margin:22px 0; transition:.15s; }
+.drop.over, .drop:hover { border-color:var(--accent); color:var(--ink); }
+.field { margin:16px 0; }
+.field label { display:block; font-size:13px; font-weight:600; margin-bottom:5px; }
+/* `.field label` outranks `.toggle` on specificity, which stacked every
+   checkbox above its own text. Match the specificity to win it back. */
+.field label.toggle { display:flex; font-weight:400; margin-bottom:0; }
+.field input:not([type=checkbox]), .field select { width:100%; }
+/* A checkbox must never stretch: width:100% here made it consume the whole
+   flex row and pushed its own label to the far edge of the form. */
+.field input[type=checkbox] { flex:none; width:auto; margin:0; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.chip { border:1px solid var(--line); background:var(--panel); color:var(--dim);
+  border-radius:20px; padding:4px 11px; font-size:13px; }
+.chip[aria-pressed=true] { background:var(--accent); color:var(--accent-ink);
+  border-color:var(--accent); }
+.chip .x { margin-left:6px; opacity:.6; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.err { color:var(--warn); font-size:13px; margin-top:10px; }
+.rcard { border:1px solid var(--line); border-radius:12px; padding:4px 16px 12px;
+  margin:14px 0; background:var(--panel); }
+.rhead { display:flex; align-items:center; gap:10px; padding:12px 0 4px;
+  border-bottom:1px solid var(--line); }
+.rhead .note { margin-left:auto; }
+.cmdblock { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+  padding:14px; font:13px/1.7 ui-monospace,Menlo,monospace; color:var(--dim);
+  overflow-x:auto; }
+.spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line);
+  border-top-color:var(--accent); border-radius:50%; animation:s .7s linear infinite; }
+@keyframes s { to { transform:rotate(360deg); } }
+@media (max-width:640px) {
+  .detail { padding-left:16px; }
+  .head { grid-template-columns:26px 1fr; }
+  .right { grid-column:2; justify-content:flex-start; }
+  .two { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+<div id="app"><div class="empty"><span class="spin"></span></div></div>
+
+<script>
+"use strict";
+const TOKEN = "__AUTOWORK_TOKEN__";
+const $ = (s, r = document) => r.querySelector(s);
+const app = $("#app");
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function api(path, opts = {}) {
+  // Every write carries this run's token; the server refuses without it.
+  opts.headers = { ...(opts.headers || {}), "X-AutoWork-Token": TOKEN };
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({ error: "bad response" }));
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+/* =======================================================  shortlist view  */
+
+const view = {
+  jobs: [], meta: {}, open: null, cursor: 0,
+  q: "", band: "all", homeOnly: false, hideDone: true, sort: "match", family: "all",
+};
+
+const BANDS = { strong: 1, good: 2, fair: 3, weak: 4 };
+
+function visible() {
+  let rows = view.jobs;
+  if (view.band !== "all") {
+    // "Best fits" is the strong+good half rather than a single band: a hard
+    // cut at one band hides roles a point below the line for no real reason.
+    const ceiling = view.band === "best" ? 2 : 9;
+    rows = rows.filter(j => BANDS[j.band] <= ceiling);
+  }
+  if (view.family !== "all") rows = rows.filter(j => j.family === view.family);
+  if (view.homeOnly) rows = rows.filter(j => j.home);
+  if (view.hideDone) rows = rows.filter(j => !["applied", "skipped"].includes(j.state));
+  if (view.q) {
+    const n = view.q.toLowerCase();
+    rows = rows.filter(j => (j.title + " " + j.company).toLowerCase().includes(n));
+  }
+  const by = {
+    match: (a, b) => b.score - a.score,
+    new: (a, b) => (b.posted_at || "").localeCompare(a.posted_at || ""),
+    company: (a, b) => a.company.localeCompare(b.company),
+  }[view.sort];
+  return [...rows].sort(by);
+}
+
+function rowHTML(j, i) {
+  const sel = i === view.cursor ? " sel" : "";
+  const done = j.state === "applied" || j.state === "skipped" ? " done" : "";
+  const open = view.open === j.id;
+  return `<div class="row${sel}${done}" data-id="${esc(j.id)}" data-i="${i}">
+    <div class="head" data-act="toggle">
+      <div class="pos">${j.position}</div>
+      <div>
+        <div class="title">${esc(j.title)}</div>
+        <div class="meta">${esc(j.company)} · ${esc(j.location)}${j.age ? " · " + esc(j.age) : ""}</div>
+      </div>
+      <div class="right">
+        ${j.stateLabel ? `<span class="badge b-state">${esc(j.stateLabel)}</span>` : ""}
+        <span class="badge b-${j.band}">${esc(j.bandLabel)}</span>
+        <span class="chev">${open ? "▾" : "▸"}</span>
+      </div>
+    </div>
+    ${open ? detailHTML(j) : ""}
+  </div>`;
+}
+
+function detailHTML(j) {
+  const c = j.coverage;
+  const pct = Math.round((c.ratio || 0) * 100);
+  return `<div class="detail">
+    ${j.clash ? `<div class="alert">You already applied to ${esc(j.company)} for
+      “${esc(j.clash)}”. Two different resumes to one company reads
+      inconsistently — worth a check first.</div>` : ""}
+
+    <ul class="why">${j.reasons.map(r =>
+      `<li><span class="ic">${esc(r.icon)}</span><span>${esc(r.text)}</span></li>`).join("")}</ul>
+
+    ${c.total ? `<div class="lab">Your resume shows ${c.have} of the ${c.total} things they ask for</div>
+      <div class="bar"><div style="width:${pct}%"></div></div>
+      ${c.missing.length ? `<div class="note">Not evidenced: ${esc(c.missing.join(", "))}</div>` : ""}` : ""}
+
+    ${j.pay ? `<div class="pay${j.pay.below ? " below" : ""}">${esc(j.pay.text)}</div>` : ""}
+
+    <div class="lab">Tailor your resume for this role</div>
+    <div class="note">Send your <b>${esc(j.resume)}</b> resume${
+      j.resumePath ? ` — <code>${esc(j.resumePath)}</code>` : ""}.</div>
+    <div class="acts" style="margin-top:8px">
+      <button class="btn" data-act="tailor" data-tool="claude">Tailor in Claude Code ↗</button>
+      <button class="btn" data-act="tailor" data-tool="ollama">Tailor with Ollama ↗</button>
+      <button class="btn small" data-act="copy"
+              data-copy="/tailor ${j.position}">Copy <code>/tailor ${j.position}</code></button>
+    </div>
+    <div class="note tailor-out" style="margin-top:8px"></div>
+
+    <div class="acts">
+      <a class="btn primary" href="${esc(j.url)}" target="_blank" rel="noopener"
+         data-act="open">Open posting ↗</a>
+      ${j.actions.map(a =>
+        `<button class="btn" data-act="state" data-state="${esc(a.state)}">${esc(a.label)}</button>`).join("")}
+    </div>
+
+    ${j.description ? `<details class="desc"><summary>Read the full description</summary>
+      <pre>${esc(j.description)}</pre></details>` : ""}
+  </div>`;
+}
+
+function render() {
+  const rows = visible();
+  if (view.cursor >= rows.length) view.cursor = Math.max(0, rows.length - 1);
+  const m = view.meta;
+  app.innerHTML = `
+  <header><div class="wrap">
+    <div class="brand">
+      <h1>AutoWork</h1>
+      <span class="sub">${m.applied || 0} applied · ${(m.postings || 0).toLocaleString()} postings
+        from ${m.boards || 0} career pages</span>
+      <button class="btn small" id="editprofile" style="margin-left:auto">
+        ⚙ Your profile &amp; resumes</button>
+    </div>
+    ${(m.followUps || []).length ? `<div class="alert" style="margin:10px 0">⏰ Time to follow up:
+      ${m.followUps.map(f => `${esc(f.company)} (${f.days}d)`).join(", ")}</div>` : ""}
+    <div class="controls">
+      <input type="search" id="q" placeholder="Search title or company…" value="${esc(view.q)}">
+      <div class="seg" id="band">
+        ${[["all", "All"], ["best", "Best fits"]].map(([v, t]) =>
+          `<button data-v="${v}" aria-pressed="${view.band === v}">${t}</button>`).join("")}
+      </div>
+      ${(m.families || []).length > 1 ? `<select id="family">
+        <option value="all"${view.family === "all" ? " selected" : ""}>All fields</option>
+        ${m.families.map(f => `<option value="${esc(f.key)}"${
+          view.family === f.key ? " selected" : ""}>${esc(f.label)}</option>`).join("")}
+      </select>` : ""}
+      <select id="sort">
+        ${[["match", "Best match"], ["new", "Newest"], ["company", "Company A–Z"]].map(([v, t]) =>
+          `<option value="${v}"${view.sort === v ? " selected" : ""}>${t}</option>`).join("")}
+      </select>
+      <label class="toggle"><input type="checkbox" id="home" ${view.homeOnly ? "checked" : ""}>
+        ${esc(m.homeCity || "Home city")} only</label>
+      <label class="toggle"><input type="checkbox" id="hide" ${view.hideDone ? "checked" : ""}>
+        Hide handled</label>
+    </div>
+  </div></header>
+  <div class="wrap">
+    <div class="count">${rows.length} role${rows.length === 1 ? "" : "s"}${
+      view.q ? ` matching “${esc(view.q)}”` : ""}</div>
+    ${rows.length ? rows.map(rowHTML).join("")
+      : `<div class="empty">Nothing here.${view.hideDone
+          ? " You've handled everything — untick <b>Hide handled</b> to see them again."
+          : " Try a shorter search."}</div>`}
+    <div class="hint"><span class="kbd">↑</span> <span class="kbd">↓</span> move ·
+      <span class="kbd">enter</span> expand · <span class="kbd">o</span> open posting ·
+      <span class="kbd">a</span> applied · <span class="kbd">s</span> save ·
+      <span class="kbd">x</span> skip · <span class="kbd">/</span> search</div>
+  </div>`;
+  const sel = $(".row.sel");
+  if (sel && view.scrollTo) { sel.scrollIntoView({ block: "nearest" }); view.scrollTo = false; }
+}
+
+async function setState(id, state) {
+  const job = view.jobs.find(j => j.id === id);
+  if (!job) return;
+  // Optimistic: the row updates immediately and the request settles behind it.
+  // A local write that fails is worth a reload, not a spinner on every click.
+  const previous = job.state;
+  job.state = state;
+  render();
+  try {
+    await api("/api/status", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, state }),
+    });
+    const fresh = await api("/api/jobs");
+    view.jobs = fresh.jobs; view.meta = fresh.meta;
+  } catch (err) {
+    job.state = previous;
+    alert("Could not save: " + err.message);
+  }
+  render();
+}
+
+app.addEventListener("click", ev => {
+  const row = ev.target.closest(".row");
+  const act = ev.target.closest("[data-act]")?.dataset.act;
+  if (act === "copy") {
+    navigator.clipboard.writeText(ev.target.dataset.copy);
+    ev.target.textContent = "Copied";
+    setTimeout(() => { ev.target.textContent = "Copy"; }, 1200);
+    return;
+  }
+  if (!row) return;
+  const id = row.dataset.id;
+  if (act === "state") { setState(id, ev.target.dataset.state); return; }
+  if (act === "tailor") { runTailor(row, ev.target); return; }
+  if (act === "open") return;              // let the link do its job
+  if (act === "toggle") {
+    view.open = view.open === id ? null : id;
+    view.cursor = Number(row.dataset.i);
+    render();
+  }
+});
+
+async function runTailor(row, button) {
+  const job = view.jobs.find(j => j.id === row.dataset.id);
+  const out = row.querySelector(".tailor-out");
+  const label = button.textContent;
+  button.textContent = "Opening…"; button.disabled = true;
+  try {
+    const res = await api("/api/tailor", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position: job.position, tool: button.dataset.tool }),
+    });
+    out.innerHTML = res.ok
+      ? (res.launched
+          ? `A terminal is open with the prompt staged — press Enter there to run it.
+             <br>Prompt saved to <code>${esc(res.path)}</code>.`
+          : `Could not open a terminal here. Run it yourself:
+             <br><code>sh ${esc(res.script)}</code>`)
+      : `${esc(res.error)}`;
+  } catch (err) {
+    out.textContent = "Failed: " + err.message;
+  }
+  button.textContent = label; button.disabled = false;
+}
+
+app.addEventListener("input", ev => {
+  if (ev.target.id === "q") { view.q = ev.target.value; view.cursor = 0; render(); $("#q").focus(); }
+  if (ev.target.id === "hide") { view.hideDone = ev.target.checked; render(); }
+  if (ev.target.id === "home") { view.homeOnly = ev.target.checked; view.cursor = 0; render(); }
+  if (ev.target.id === "sort") { view.sort = ev.target.value; render(); }
+  if (ev.target.id === "family") { view.family = ev.target.value; view.cursor = 0; render(); }
+});
+
+app.addEventListener("click", ev => {
+  const b = ev.target.closest("#band button");
+  if (b) { view.band = b.dataset.v; view.cursor = 0; render(); }
+  if (ev.target.closest("#editprofile")) openProfile();
+});
+
+async function openProfile() {
+  const saved = await api("/api/profile");
+  await loadFamilies();
+  Object.assign(setup, {
+    editing: true, error: "", busy: false,
+    name: saved.name || "", email: saved.email || "", city: saved.city || "",
+    years: saved.years, band: saved.experience_band || "0-2",
+    ctc: saved.current_ctc_lpa ?? "", remote: saved.remote_ok !== false,
+    homeOnly: !!saved.home_only,
+    families: saved.families || ["engineering"],
+    resumes: (saved.resumes || []).map(r => ({
+      filename: r.path || r.label, text: "", label: r.label,
+      roles: r.roles || [], skills: r.skills || [], key: r.key_skills || [],
+      // Carried through untouched so saving an unchanged resume does not
+      // recompute — and flatten — weights tuned against text we no longer hold.
+      slug: r.slug, weights: r.weights, title_weights: r.title_weights,
+    })),
+  });
+  renderSetup();
+}
+
+document.addEventListener("keydown", ev => {
+  if (setupMode) return;
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+  if (ev.key === "/" && !typing) { ev.preventDefault(); $("#q")?.focus(); return; }
+  if (typing) { if (ev.key === "Escape") ev.target.blur(); return; }
+
+  const rows = visible();
+  const here = rows[view.cursor];
+  const move = d => {
+    view.cursor = Math.min(rows.length - 1, Math.max(0, view.cursor + d));
+    view.scrollTo = true; render();
+  };
+  switch (ev.key) {
+    // Arrows are the ones people reach for; j/k stay as an alias rather than
+    // the documented default.
+    case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
+    case "ArrowUp": case "k": ev.preventDefault(); move(-1); break;
+    case "Enter": case " ":
+      if (here) { ev.preventDefault(); view.open = view.open === here.id ? null : here.id; render(); }
+      break;
+    case "o": if (here) window.open(here.url, "_blank", "noopener"); break;
+    case "a": if (here) setState(here.id, "applied"); break;
+    case "s": if (here) setState(here.id, "shortlisted"); break;
+    case "x": if (here) setState(here.id, "skipped"); break;
+    case "Escape": view.open = null; render(); break;
+  }
+});
+
+/* ===========================================================  setup view  */
+
+let setupMode = false;
+const setup = {
+  // One entry per uploaded resume. Several is the normal case, not an edge
+  // case: an infrastructure resume and a product resume target different jobs,
+  // and the ranker scores every posting against each of them separately.
+  resumes: [], busy: false, error: "",
+  name: "", email: "", city: "", years: null, band: "0-2", ctc: "",
+  remote: true, homeOnly: false, families: ["engineering"], allFamilies: [],
+};
+
+const BANDS_UI = [["fresher", "No experience yet"], ["0-2", "0–2 years"],
+                  ["2-4", "2–4 years"], ["4-6", "4–6 years"], ["6+", "6+ years"]];
+
+const slugify = s => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-|-$/g, "") || "resume";
+
+function resumeCard(r, i) {
+  return `<div class="rcard" data-i="${i}">
+    <div class="rhead">
+      <b>${esc(r.filename)}</b>
+      <span class="note">${r.skills.length} skills · ${r.roles.length} roles</span>
+      <button class="btn small" data-act="drop-resume">Remove</button>
+    </div>
+    <div class="field">
+      <label>What to call this resume</label>
+      <input type="text" data-f="label" value="${esc(r.label)}"
+             placeholder="e.g. DevOps-leaning">
+    </div>
+    <div class="field">
+      <label>Roles to target with it — click to remove</label>
+      <div class="chips">${r.roles.map(x =>
+        `<button class="chip" data-act="drop-role" data-v="${esc(x)}">${esc(x)}<span class="x">×</span></button>`).join("")}</div>
+      <input type="text" data-f="addrole" placeholder="Add a role, press Enter"
+             style="margin-top:8px">
+    </div>
+    <div class="field">
+      <label>Star the skills you want to be hired for</label>
+      <p class="note" style="margin:0 0 6px">How often a skill appears on a resume
+        is a poor guide to what you want to do next — a real infra resume said
+        Redis six times and Kubernetes twice. Starred skills are weighted highest.</p>
+      <div class="chips">${r.skills.map(x =>
+        `<button class="chip" data-act="star" data-v="${esc(x)}"
+          aria-pressed="${r.key.includes(x)}">${esc(x)}</button>`).join("")}</div>
+    </div>
+  </div>`;
+}
+
+function renderSetup() {
+  setupMode = true;
+  const s = setup;
+  app.innerHTML = `<div class="setup">
+    ${s.editing ? `<button class="btn small" id="backtojobs">← Back to jobs</button>` : ""}
+    <h2 style="margin-top:${s.editing ? "16px" : "0"}">${
+      s.editing ? "Your profile &amp; resumes" : "Set up AutoWork"}</h2>
+    <p class="sub">${s.editing
+      ? "Add or remove a resume, re-star the skills that matter, or move city. Saving keeps a backup of the previous version."
+      : "Drop in your resumes. They stay on this machine — nothing is uploaded anywhere, and the files are never written to disk."}</p>
+
+    <div class="drop" id="drop">
+      ${s.busy ? `<span class="spin"></span> Reading…`
+        : `<b>Drop ${s.resumes.length ? "another resume" : "your resume"} here</b><br>
+           <span class="note">or click to choose · PDF, Markdown or text${
+             s.resumes.length ? "" : " · add as many as you have"}</span>`}
+      <input type="file" id="file" accept=".pdf,.md,.txt" multiple hidden>
+    </div>
+
+    ${s.resumes.length ? `
+    <div id="resumes">${s.resumes.map(resumeCard).join("")}</div>
+
+    <h3 style="margin-top:32px">About you</h3>
+    <p class="note">Guessed from your resume — correct anything wrong.</p>
+    <div class="two">
+      <div class="field"><label>Your name</label>
+        <input type="text" id="s-name" value="${esc(s.name)}"></div>
+      <div class="field"><label>City you want to work in</label>
+        <input type="text" id="s-city" value="${esc(s.city)}" placeholder="Bengaluru, India"></div>
+    </div>
+    <div class="two">
+      <div class="field"><label>Experience</label>
+        <select id="s-band">${BANDS_UI.map(([v, t]) =>
+          `<option value="${v}"${s.band === v ? " selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="field"><label>Current salary (LPA, optional)</label>
+        <input type="number" id="s-ctc" value="${esc(s.ctc)}" placeholder="e.g. 12"></div>
+    </div>
+    <div class="field">
+      <label>What kind of roles?</label>
+      <p class="note" style="margin:0 0 6px">Decides which job titles count at all.
+        The families you leave off become the blocklist — pick more than one if you
+        are open to both.</p>
+      <div class="chips" id="families">${s.allFamilies.map(f =>
+        `<button class="chip" data-family="${esc(f.key)}"
+          aria-pressed="${s.families.includes(f.key)}">${esc(f.label)}</button>`).join("")}</div>
+    </div>
+
+    <div class="field">
+      <label>Not sure what to target?</label>
+      <p class="note" style="margin:0 0 6px">Opens a terminal with your resume and
+        these settings, and asks the model to argue for the titles and skills worth
+        targeting. It can edit the config for you if you agree.</p>
+      <div class="acts" style="margin-top:0">
+        <button class="btn" data-advise="claude">Ask Claude Code ↗</button>
+        <button class="btn" data-advise="ollama">Ask Ollama ↗</button>
+      </div>
+      <div class="note advise-out" style="margin-top:8px"></div>
+    </div>
+
+    <div class="field">
+      <label class="toggle"><input type="checkbox" id="s-remote" ${s.remote ? "checked" : ""}>
+        Include remote roles</label>
+      <label class="toggle" style="margin-top:6px"><input type="checkbox" id="s-home"
+        ${s.homeOnly ? "checked" : ""}> Only show jobs in my city</label>
+    </div>
+
+    ${s.error ? `<div class="err">${esc(s.error)}</div>` : ""}
+    <div class="acts"><button class="btn primary" id="save">${
+      s.editing ? "Save changes" : "Save and find jobs"}</button></div>`
+    : ""}
+  </div>`;
+  wireSetup();
+}
+
+function wireSetup() {
+  $("#families")?.addEventListener("click", e => {
+    const b = e.target.closest("[data-family]");
+    if (!b) return;
+    const k = b.dataset.family;
+    const next = setup.families.includes(k)
+      ? setup.families.filter(x => x !== k) : [...setup.families, k];
+    // At least one, or the ranker has no allowlist to work from.
+    setup.families = next.length ? next : setup.families;
+    renderSetup();
+  });
+  app.querySelectorAll("[data-advise]").forEach(b => b.addEventListener("click", async () => {
+    const out = $(".advise-out"); const label = b.textContent;
+    b.textContent = "Opening…"; b.disabled = true;
+    try {
+      const res = await api("/api/advise", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tool: b.dataset.advise, city: setup.city, experience_band: setup.band,
+          families: setup.families,
+          resumes: setup.resumes.map(r => ({
+            label: r.label, text: r.text, skills: r.skills,
+            roles: r.roles, key_skills: r.key,
+          })),
+        }),
+      });
+      out.innerHTML = res.ok
+        ? (res.launched ? "A terminal is open — press Enter there to start."
+                        : `Run it yourself: <code>sh ${esc(res.script)}</code>`)
+        : esc(res.error);
+    } catch (err) { out.textContent = "Failed: " + err.message; }
+    b.textContent = label; b.disabled = false;
+  }));
+  $("#backtojobs")?.addEventListener("click", async () => {
+    setupMode = false; setup.editing = false;
+    const data = await api("/api/jobs");
+    view.jobs = data.jobs; view.meta = data.meta; render();
+  });
+  $("#drop")?.addEventListener("click", () => $("#file").click());
+  $("#file")?.addEventListener("change", e => upload([...e.target.files]));
+  const drop = $("#drop");
+  ["dragover", "dragleave", "drop"].forEach(evt =>
+    drop?.addEventListener(evt, e => {
+      e.preventDefault();
+      drop.classList.toggle("over", evt === "dragover");
+      if (evt === "drop") upload([...e.dataTransfer.files]);
+    }));
+
+  $("#resumes")?.addEventListener("click", e => {
+    const card = e.target.closest(".rcard");
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (!card || !act) return;
+    const r = setup.resumes[Number(card.dataset.i)];
+    const v = e.target.closest("[data-v]")?.dataset.v;
+    if (act === "drop-resume") setup.resumes.splice(Number(card.dataset.i), 1);
+    else if (act === "drop-role") r.roles = r.roles.filter(x => x !== v);
+    else if (act === "star") r.key = r.key.includes(v) ? r.key.filter(x => x !== v) : [...r.key, v];
+    renderSetup();
+  });
+  $("#resumes")?.addEventListener("input", e => {
+    const card = e.target.closest(".rcard");
+    if (card && e.target.dataset.f === "label") {
+      setup.resumes[Number(card.dataset.i)].label = e.target.value;
+    }
+  });
+  $("#resumes")?.addEventListener("keydown", e => {
+    const card = e.target.closest(".rcard");
+    if (e.key === "Enter" && card && e.target.dataset.f === "addrole" && e.target.value.trim()) {
+      setup.resumes[Number(card.dataset.i)].roles.push(e.target.value.trim());
+      renderSetup();
+    }
+  });
+
+  const bind = (id, prop, kind) => $(id)?.addEventListener("input", e => {
+    setup[prop] = kind === "check" ? e.target.checked : e.target.value;
+  });
+  bind("#s-name", "name"); bind("#s-city", "city"); bind("#s-ctc", "ctc");
+  bind("#s-band", "band"); bind("#s-remote", "remote", "check");
+  bind("#s-home", "homeOnly", "check");
+  $("#save")?.addEventListener("click", save);
+}
+
+async function loadFamilies() {
+  if (setup.allFamilies.length) return;
+  try { setup.allFamilies = await api("/api/families"); } catch { /* keep going */ }
+}
+
+async function upload(files) {
+  if (!files.length) return;
+  setup.busy = true; setup.error = ""; renderSetup();
+  await loadFamilies();
+  for (const file of files) {
+    try {
+      const parsed = await api("/api/resume", {
+        method: "POST",
+        headers: { "X-Filename": file.name, "Content-Type": "application/octet-stream" },
+        body: await file.arrayBuffer(),
+      });
+      setup.resumes.push({
+        filename: file.name, text: parsed.text,
+        label: file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "),
+        roles: parsed.roles.slice(), skills: parsed.skills.slice(),
+        key: parsed.skills.slice(0, 5),
+      });
+      // Personal details come from the first resume that supplies them; later
+      // uploads should not overwrite a value the user has already corrected.
+      setup.name ||= parsed.name;
+      setup.email ||= parsed.email;
+      setup.city ||= parsed.location;
+      if (setup.years == null && parsed.years != null) {
+        setup.years = parsed.years;
+        setup.band = parsed.years < 0.5 ? "fresher" : parsed.years < 2 ? "0-2"
+          : parsed.years < 4 ? "2-4" : parsed.years < 6 ? "4-6" : "6+";
+      }
+      if (setup.ctc === "" && parsed.currentCtcLpa != null) setup.ctc = parsed.currentCtcLpa;
+      if (parsed.families?.length && !setup.touchedFamilies) setup.families = parsed.families;
+    } catch (err) {
+      setup.error = `Could not read ${file.name}: ${err.message}`;
+    }
+  }
+  setup.busy = false; renderSetup();
+}
+
+async function save() {
+  setup.error = "";
+  const seen = new Set();
+  const resumes = setup.resumes.map(r => {
+    let slug = slugify(r.label);
+    while (seen.has(slug)) slug += "-2";       // two resumes named the same
+    seen.add(slug);
+    return {
+      slug, label: r.label || slug, path: r.filename,
+      roles: r.roles, skills: r.skills, key_skills: r.key, text: r.text,
+      // Only present for a resume carried over from the saved config; a
+      // freshly uploaded one has text and gets re-weighted from it.
+      ...(r.text ? {} : {weights: r.weights, title_weights: r.title_weights}),
+    };
+  });
+  try {
+    const res = await api("/api/profile", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: setup.name, email: setup.email, city: setup.city,
+        years: setup.years, experience_band: setup.band,
+        current_ctc_lpa: setup.ctc === "" ? null : Number(setup.ctc),
+        remote_ok: setup.remote, home_only: setup.homeOnly,
+        families: setup.families, resumes,
+      }),
+    });
+    if (!res.ok) { setup.error = res.problems.join(" · "); renderSetup(); return; }
+    if (setup.editing) {
+      // Already have a corpus — go straight back to the list. The ranking is
+      // stale until `autowork rank` re-runs, so say so rather than pretend.
+      setupMode = false; setup.editing = false;
+      const data = await api("/api/jobs");
+      view.jobs = data.jobs; view.meta = data.meta;
+      render();
+      alert("Profile saved. Run `uv run autowork rank` to re-score against it.");
+      return;
+    }
+    app.innerHTML = `<div class="setup"><h2>Saved ✓</h2>
+      <p>Your profile is at <code>${esc(res.path)}</code>, matching against
+        ${resumes.length} resume${resumes.length === 1 ? "" : "s"}. Now collect the
+        jobs — this takes a minute or two the first time:</p>
+      <pre class="cmdblock">uv run autowork verify
+uv run autowork poll
+uv run autowork rank</pre>
+      <p class="note">Then reload this page. After that,
+        <code>uv run autowork console</code> any time.</p></div>`;
+  } catch (err) {
+    setup.error = err.message; renderSetup();
+  }
+}
+
+/* ==================================================================  boot */
+
+(async function boot() {
+  try {
+    const state = await api("/api/state");
+    if (!state.configured) return renderSetup();
+    if (!state.postings) {
+      app.innerHTML = `<div class="setup"><h2>No jobs collected yet</h2>
+        <p>Your profile is set up. Run these two commands, then reload:</p>
+        <pre class="note" style="background:var(--panel);border:1px solid var(--line);
+          border-radius:8px;padding:14px">uv run autowork poll
+uv run autowork rank</pre></div>`;
+      return;
+    }
+    const data = await api("/api/jobs");
+    view.jobs = data.jobs; view.meta = data.meta;
+    setupMode = false;
+    render();
+  } catch (err) {
+    app.innerHTML = `<div class="empty">Could not load: ${esc(err.message)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

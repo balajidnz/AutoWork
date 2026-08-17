@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen --group dev
+      - run: uv run pytest tests/ -q
+
+      # The gates read their thresholds and blocklists from profiles.json, so a
+      # malformed edit there breaks ranking at runtime rather than at import.
+      - name: Config parses
+        run: uv run python -c "from autowork import rank; rank.load_config()"

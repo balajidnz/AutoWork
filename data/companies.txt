@@ -1,0 +1,626 @@
+# Seed watchlist. One company per line; blank lines and '#' comments ignored.
+# `autowork verify` turns these into confirmed ATS board tokens.
+#
+# Over-inclusive on purpose: a wrong guess costs one HTTP request, a missing
+# name costs jobs. Services firms (TCS, Infosys, Wipro, Accenture) are omitted
+# — they run their own portals and do not publish Greenhouse/Lever/Ashby feeds.
+
+# ---------------------------------------------------------------------------
+# Indian product & SaaS
+# ---------------------------------------------------------------------------
+Freshworks
+Zoho
+Postman
+BrowserStack
+LambdaTest
+Testsigma
+Chargebee
+Hasura
+Atlan
+Whatfix
+MoEngage
+CleverTap
+Amagi
+InMobi
+Darwinbox
+Yellow.ai
+Observe.AI
+Uniphore
+Mindtickle
+LeadSquared
+Innovaccer
+Icertis
+Druva
+Sprinklr
+Nutanix
+Kissflow
+Zluri
+Rocketlane
+SaaS Labs
+Sprinto
+Facilio
+Zenskar
+Hevo Data
+Nanonets
+Skit.ai
+Haptik
+Verloop
+Plivo
+Exotel
+Kaleyra
+Gupshup
+Netcore
+Wingify
+Locus
+Fractal Analytics
+Tiger Analytics
+Qapita
+Devfolio
+Chargebee
+Zluri
+Spotdraft
+Leegality
+SirionLabs
+Eightfold
+Turing
+Crio
+Scaler
+Newton School
+Airmeet
+Zluri
+Toplyne
+Fyle
+Zaggle
+Clear
+ClearTax
+Recko
+Open Financial
+Jodo
+Classplus
+Teachmint
+Cuemath
+Vedantu
+Unacademy
+upGrad
+Simplilearn
+Physics Wallah
+Emeritus
+Eruditus
+
+# ---------------------------------------------------------------------------
+# Indian fintech
+# ---------------------------------------------------------------------------
+Razorpay
+CRED
+Jupiter
+Slice
+Groww
+Zerodha
+Smallcase
+KreditBee
+Zeta
+Setu
+Signzy
+M2P Fintech
+Perfios
+Turtlemint
+Khatabook
+OkCredit
+Juspay
+Cashfree
+Pine Labs
+BharatPe
+OneCard
+Jar
+INDmoney
+Dhan
+Angel One
+Upstox
+Navi
+Fi Money
+Zolve
+Rupeek
+Yubi
+Lentra
+PhonePe
+Paytm
+MobiKwik
+Acko
+Digit Insurance
+PolicyBazaar
+Onsurity
+Plum
+Nium
+Wint Wealth
+
+# ---------------------------------------------------------------------------
+# Indian consumer, commerce & logistics
+# ---------------------------------------------------------------------------
+Meesho
+Swiggy
+Zomato
+Flipkart
+Myntra
+Nykaa
+Lenskart
+Zepto
+Blinkit
+Dunzo
+Rapido
+Ola
+Urban Company
+Delhivery
+Shiprocket
+Shadowfax
+Porter
+BlackBuck
+Ecom Express
+XpressBees
+Bizongo
+Zetwerk
+Udaan
+ElasticRun
+Country Delight
+Licious
+FirstCry
+Purplle
+Mamaearth
+boAt
+Wakefit
+Pepperfry
+MakeMyTrip
+Ixigo
+Cleartrip
+OYO
+Treebo
+Dream11
+Mobile Premier League
+Games24x7
+Nazara
+WinZO
+ShareChat
+Josh Talks
+Practo
+PharmEasy
+Tata 1mg
+Cult.fit
+HealthifyMe
+Wysa
+
+# ---------------------------------------------------------------------------
+# AI / ML labs & applications
+# ---------------------------------------------------------------------------
+Anthropic
+OpenAI
+Cohere
+Mistral AI
+Perplexity
+Scale AI
+Hugging Face
+Character AI
+Contextual AI
+Writer
+Glean
+Hebbia
+Harvey
+EvenUp
+Abridge
+Nabla
+Ambience Healthcare
+OpenEvidence
+Sierra
+Decagon
+Clay
+Runway
+ElevenLabs
+Suno
+Synthesia
+Descript
+Luma AI
+Pika
+Captions
+Anysphere
+Cursor
+Codeium
+Windsurf
+Magic
+Poolside
+Augment Code
+Cognition
+Factory AI
+Reflection AI
+Thinking Machines
+Sakana AI
+Weights and Biases
+Comet ML
+LangChain
+LlamaIndex
+CrewAI
+Browserbase
+E2B
+Daytona
+
+# ---------------------------------------------------------------------------
+# ML infrastructure & compute
+# ---------------------------------------------------------------------------
+Modal
+Baseten
+Replicate
+Together AI
+Fireworks AI
+Anyscale
+Groq
+Cerebras
+SambaNova
+RunPod
+Lambda Labs
+CoreWeave
+Crusoe
+Outerbounds
+Union AI
+Fal
+Beam Cloud
+
+# ---------------------------------------------------------------------------
+# Data infrastructure & databases
+# ---------------------------------------------------------------------------
+Databricks
+Snowflake
+ClickHouse
+Timescale
+SingleStore
+Cockroach Labs
+Yugabyte
+PlanetScale
+Neon
+Supabase
+Xata
+Nile
+Turso
+DuckDB Labs
+MotherDuck
+Materialize
+Confluent
+Redpanda
+StarTree
+Imply
+Redis
+MongoDB
+Elastic
+Qdrant
+Pinecone
+Weaviate
+Chroma
+Zilliz
+LanceDB
+dbt Labs
+Fivetran
+Airbyte
+Hightouch
+Census
+RudderStack
+Estuary
+Prefect
+Dagster
+Astronomer
+Temporal
+
+# ---------------------------------------------------------------------------
+# Developer tools & platform
+# ---------------------------------------------------------------------------
+Vercel
+Netlify
+Render
+Railway
+Fly.io
+DigitalOcean
+Cloudflare
+Fastly
+HashiCorp
+Pulumi
+Docker
+GitLab
+Sourcegraph
+Replit
+Deno
+Oven
+Linear
+Notion
+Figma
+Miro
+Airtable
+Retool
+Zapier
+Make
+n8n
+Postman
+Insomnia
+Stainless
+Speakeasy
+Buildkite
+CircleCI
+Earthly
+Depot
+Namespace
+Warp
+Tailscale
+Teleport
+Ngrok
+
+# ---------------------------------------------------------------------------
+# Observability, security & reliability
+# ---------------------------------------------------------------------------
+Grafana Labs
+Datadog
+New Relic
+Honeycomb
+Chronosphere
+Cribl
+Axiom
+Better Stack
+Sentry
+Rollbar
+incident.io
+PagerDuty
+Snyk
+Semgrep
+Socket
+Chainguard
+Wiz
+Orca Security
+Sysdig
+Aqua Security
+Doppler
+Infisical
+1Password
+Vanta
+Drata
+Secureframe
+Okta
+Auth0
+WorkOS
+Clerk
+Stytch
+Descope
+
+# ---------------------------------------------------------------------------
+# Global fintech & payments
+# ---------------------------------------------------------------------------
+Stripe
+Adyen
+Checkout.com
+Plaid
+Wise
+Revolut
+Monzo
+Starling Bank
+Robinhood
+Brex
+Ramp
+Mercury
+Chime
+Affirm
+Marqeta
+Highnote
+Lithic
+Modern Treasury
+Increase
+Column
+Moov
+Unit
+Airwallex
+Rapyd
+Thunes
+Coinbase
+Kraken
+Gemini
+Circle
+Fireblocks
+Alchemy
+Chainalysis
+
+# ---------------------------------------------------------------------------
+# Global product companies hiring in India
+# ---------------------------------------------------------------------------
+Atlassian
+Twilio
+Segment
+Braze
+Amplitude
+Mixpanel
+Heap
+LaunchDarkly
+Statsig
+Optimizely
+Contentful
+Sanity
+Storyblok
+Webflow
+Squarespace
+Wix
+Shopify
+BigCommerce
+Canva
+Grammarly
+Duolingo
+Coursera
+Udemy
+Skillshare
+Discord
+Reddit
+Pinterest
+Snap
+Spotify
+SoundCloud
+Bumble
+DoorDash
+Instacart
+Lyft
+Uber
+Turo
+Rippling
+Deel
+Remote
+Gusto
+Justworks
+Oyster
+Carta
+Pave
+Lattice
+Culture Amp
+Dropbox
+Box
+Asana
+Smartsheet
+Monday.com
+ClickUp
+Automattic
+Toast
+Samsara
+Verkada
+Applied Intuition
+Nuro
+Waymo
+Zipline
+Palantir
+Scale
+Anduril
+Rain
+Chief
+Vanta
+
+# ---------------------------------------------------------------------------
+# Second wave — gaps from the first pass: Indian mid-size, and global companies
+# with large Bangalore engineering offices.
+# ---------------------------------------------------------------------------
+Cohesity
+Rubrik
+Confluent
+HashiCorp
+Couchbase
+SolarWinds
+Progress Software
+Aera Technology
+Sumo Logic
+JFrog
+Harness
+CloudBees
+Postman
+Hasura
+AppDynamics
+Netskope
+Cloudera
+Informatica
+Talend
+Denodo
+Sigmoid
+Tredence
+LatentView
+Course5i
+Absolutdata
+Quantiphi
+Mu Sigma
+CleverTap
+WebEngage
+Netcore Cloud
+Interakt
+Ozonetel
+Knowlarity
+Servetel
+Tata Communications
+Sify
+Route Mobile
+Tanla
+Airtel
+Jio Platforms
+Sarvam AI
+Krutrim
+CoRover
+Gnani.ai
+Vernacular
+Slang Labs
+Niki.ai
+Avaamo
+Rezo.ai
+Locobuzz
+SquadStack
+Nurix AI
+Sprinklr
+Whatfix
+Chargebee
+Zluri
+Zenduty
+Squadcast
+Last9
+Levitate
+Airbase
+Slintel
+Fyle
+Happay
+EnKash
+Karbon
+Refyne
+Jai Kisan
+Arya.ag
+DeHaat
+Ninjacart
+WayCool
+Captain Fresh
+Country Delight
+Bijnis
+Infra.Market
+OfBusiness
+Moglix
+Jumbotail
+Elastic Run
+Vahak
+BlackBuck
+Rivigo
+FarEye
+Loginext
+Pando
+Shipsy
+GoComet
+Freightify
+Cogoport
+Zoomcar
+Bounce
+Yulu
+Chalo
+Redbus
+Tummoc
+Nammayatri
+Rapido
+Cars24
+Spinny
+CarDekho
+Droom
+Turno
+Zetwerk
+Groyyo
+Fashinza
+Zolve
+Vested
+Stable Money
+Fold Money
+Wint
+Tarrakki
+Kuvera
+Scripbox
+ET Money
+Paisabazaar
+BankBazaar
+Credgenics
+Finbox
+Rupifi
+Progcap
+FlexiLoans
+Indifi
+Aye Finance
+Lendingkart
+NeoGrowth
+Kinara Capital
+Vivriti
+Northern Arc
+Yubi
+Blacksoil
