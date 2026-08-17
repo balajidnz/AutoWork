@@ -29,7 +29,16 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
         with:
+          # Caches ~/.cache/uv, keyed on the lock. The heavy part of a cold run
+          # is the download — tls-client alone is 93MB, via python-jobspy — and
+          # rebuilding .venv from a warm cache costs ~0.1s, so there is nothing
+          # to gain from caching the virtualenv itself.
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          # Without this uv fetches and unpacks CPython on every run: its
+          # managed interpreters live in ~/.local/share/uv/python, which is not
+          # part of the uv cache directory. The action caches them properly.
+          python-version: "3.13"
 
       - name: Install
         run: uv sync --frozen --group dev

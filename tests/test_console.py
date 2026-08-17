@@ -413,7 +413,11 @@ def test_ollama_script_uses_the_cli_not_claude(tmp_path, monkeypatch) -> None:
     prompt.write_text("x")
     body = tailor.runner_script(prompt, _ctx(), "ollama", "llama3.1").read_text()
     assert "--ollama llama3.1" in body
-    assert "claude" not in body
+    # Check the command line, not the whole script: the script also does
+    # `cd <repo root>`, and a checkout path containing "claude" — which is
+    # exactly where this project tends to live — failed the naive check.
+    command = body.strip().splitlines()[-1]
+    assert "claude" not in command
 
 
 def test_script_waits_rather_than_running_immediately(tmp_path, monkeypatch) -> None:
@@ -503,8 +507,16 @@ def test_three_resumes_each_get_their_own_track() -> None:
 
 
 def test_every_configured_profile_resolves_to_a_real_resume() -> None:
-    """The card names a file to send; that file has to exist."""
+    """The card names a file to send; that file has to exist.
+
+    A local check. Resume files are gitignored, so a CI checkout restores the
+    profile from a secret and has none of them — and does not need them, since
+    only tailoring reads a resume file and that never runs there.
+    """
     config = rank.load_config()
+    paths = [db.REPO_ROOT / p["resume"] for p in config["profiles"].values() if p.get("resume")]
+    if not any(p.exists() for p in paths):
+        pytest.skip("no resume files in this checkout (CI restores the profile only)")
     for slug, profile in config["profiles"].items():
         path = db.REPO_ROOT / profile["resume"]
         assert path.exists(), f"profile '{slug}' points at missing {profile['resume']}"
@@ -521,7 +533,12 @@ def test_config_round_trips_through_the_editor() -> None:
         assert back["profiles"][slug]["skills"] == profile["skills"]
         assert back["profiles"][slug]["target_titles"] == profile["target_titles"]
     assert back["candidate"]["base"] == config["candidate"]["base"]
-    assert profile_build.validate(back) == []
+    # Compared against the input, not against empty. The scheduled run rebuilds
+    # the config from the PROFILE_JSON secret and has no resume files — they
+    # are gitignored, and only tailoring reads them — so `validate` legitimately
+    # reports them missing there. The invariant is that a round trip introduces
+    # no *new* problem, which holds with or without the files.
+    assert profile_build.validate(back) == profile_build.validate(config)
 
 
 def test_editing_does_not_flatten_tuned_weights() -> None:
