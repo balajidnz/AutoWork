@@ -890,3 +890,83 @@ def test_reset_clears_the_owner_but_keeps_the_shared_watchlist() -> None:
         assert name in deletes, f"reset should clear {name}"
     for shared in ("boards.json", "companies.txt", "comp.json"):
         assert shared not in deletes, f"reset must not delete {shared}"
+
+
+# ------------------------------------------------------- delisted postings
+
+
+def _seed(conn, *rows):
+    """rows: (id, token, source, last_seen)"""
+    for job_id, token, source, seen in rows:
+        conn.execute(
+            """INSERT INTO jobs (id, dedup_key, source, company, company_token,
+                                 title, url, first_seen, last_seen)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (job_id, job_id, source, "Acme", token, "SDE", "u", seen, seen),
+        )
+    conn.commit()
+
+
+def test_a_posting_its_board_no_longer_lists_is_delisted(tmp_path) -> None:
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn,
+          ("fresh", "acme", "greenhouse", "2026-08-12T00:00:00+00:00"),
+          ("gone",  "acme", "greenhouse", "2026-08-07T00:00:00+00:00"))
+    assert db.delisted_ids(conn) == {"gone"}
+
+
+def test_a_board_outage_does_not_delist_everything_on_it(tmp_path) -> None:
+    """The failure mode a fixed age check would have: if a board errors for
+    days, none of its jobs were seen, and all of them look taken down."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn,
+          ("a", "acme", "greenhouse", "2026-08-07T00:00:00+00:00"),
+          ("b", "acme", "greenhouse", "2026-08-07T00:00:00+00:00"))
+    assert db.delisted_ids(conn) == set()
+
+
+def test_boards_are_judged_independently(tmp_path) -> None:
+    """One company polling fine must not condemn another company's postings."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn,
+          ("live", "acme",  "greenhouse", "2026-08-12T00:00:00+00:00"),
+          ("old",  "other", "greenhouse", "2026-08-07T00:00:00+00:00"))
+    assert db.delisted_ids(conn) == set()
+
+
+def test_keyword_search_results_are_never_delisted(tmp_path) -> None:
+    """A search returns what matched today; absence carries no information."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn,
+          ("new", "li", "search", "2026-08-12T00:00:00+00:00"),
+          ("old", "li", "search", "2026-08-01T00:00:00+00:00"))
+    assert db.delisted_ids(conn) == set()
+
+
+def test_same_day_repolls_are_within_the_grace_window(tmp_path) -> None:
+    """Two polls hours apart must not delist whatever the second one missed."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn,
+          ("a", "acme", "greenhouse", "2026-08-12T18:00:00+00:00"),
+          ("b", "acme", "greenhouse", "2026-08-12T02:00:00+00:00"))
+    assert db.delisted_ids(conn) == set()
+
+
+def test_the_gate_rejects_a_delisted_posting() -> None:
+    """Checked before anything about fit — none of that matters for a dead link."""
+    conn = _corpus_or_skip()
+    row = conn.execute("SELECT * FROM jobs LIMIT 1").fetchone()
+    reason, _ = rank.gate_with_tier(row, rank.load_config(), delisted={row["id"]})
+    assert reason and reason.startswith("delisted")
+
+
+def test_the_delisted_set_reaches_the_score_rows_not_just_the_counter() -> None:
+    """Regression: gating only run()'s counter printed "delisted 781" in the
+    stats while every one of them stayed in the digest. The score rows are what
+    the shortlist reads."""
+    conn = _corpus_or_skip()
+    row = conn.execute("SELECT * FROM jobs LIMIT 1").fetchone()
+    score = rank.score_job(row, next(iter(rank.load_config()["profiles"])),
+                           rank.load_config(), ats_only=False, delisted={row["id"]})
+    assert score.passed is False
+    assert score.gate and score.gate.startswith("delisted")

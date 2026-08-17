@@ -256,6 +256,35 @@ def upsert_jobs(conn: sqlite3.Connection, jobs: Iterable[Job]) -> tuple[int, int
     return new, updated
 
 
+def delisted_ids(conn: sqlite3.Connection, grace_hours: int = 30) -> set[str]:
+    """Postings whose own board was polled more recently than they were seen.
+
+    An ATS board is fetched in full every run, so a posting missing from that
+    response has been taken down. Comparing against a fixed age would be wrong:
+    if a board errors for three days, none of its jobs were seen either, and
+    every one of them would look delisted. Comparing each posting against the
+    freshest posting *from the same board* is immune to that — an outage moves
+    both sides equally.
+
+    Only exhaustively-polled sources qualify. A keyword search returns whatever
+    matched today, so absence there means nothing.
+    """
+    placeholders = ",".join("?" * len(ATS_SOURCES))
+    rows = conn.execute(
+        f"""SELECT j.id
+              FROM jobs j
+              JOIN (SELECT company_token, source, MAX(last_seen) AS fresh
+                      FROM jobs
+                     WHERE source IN ({placeholders}) AND company_token IS NOT NULL
+                     GROUP BY company_token, source) b
+                ON j.company_token = b.company_token AND j.source = b.source
+             WHERE j.source IN ({placeholders})
+               AND julianday(b.fresh) - julianday(j.last_seen) > ?""",
+        (*ATS_SOURCES, *ATS_SOURCES, grace_hours / 24),
+    ).fetchall()
+    return {r["id"] for r in rows}
+
+
 def ats_only_keys(conn: sqlite3.Connection) -> set[str]:
     """Postings no aggregator has picked up yet — the early-signal set."""
     rows = conn.execute(

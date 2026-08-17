@@ -326,7 +326,8 @@ def apply_gates(job: sqlite3.Row, cfg: dict) -> str | None:
     return reason
 
 
-def gate_with_tier(job: sqlite3.Row, cfg: dict) -> tuple[str | None, str]:
+def gate_with_tier(job: sqlite3.Row, cfg: dict,
+                   delisted: set[str] | None = None) -> tuple[str | None, str]:
     """Gate a posting and say which tier it lands in.
 
     Seniority is not binary for a 21-month candidate. "Staff Engineer" is out
@@ -337,6 +338,11 @@ def gate_with_tier(job: sqlite3.Row, cfg: dict) -> tuple[str | None, str]:
     c = cfg["constraints"]
     title = (job["title"] or "").lower()
     tier = "core"
+
+    # Taken down since the last poll. Checked first: everything below is about
+    # whether the role suits you, and none of it matters for a dead link.
+    if delisted and job["id"] in delisted:
+        return "delisted: no longer on the board", tier
 
     # Allowlist, for the same reason the location gate is one: enumerating
     # non-engineering titles never converges. "Office Operations Associate"
@@ -452,10 +458,15 @@ def _skill_overlap(text: str, skills: dict[str, int]) -> tuple[float, list[str]]
     return score, top
 
 
-def score_job(job: sqlite3.Row, profile_name: str, cfg: dict, *, ats_only: bool) -> Score:
+def score_job(job: sqlite3.Row, profile_name: str, cfg: dict, *, ats_only: bool,
+              delisted: set[str] | None = None) -> Score:
     result = Score(job_id=job["id"], profile=profile_name)
 
-    gate, tier = gate_with_tier(job, cfg)
+    # `delisted` has to reach here, not just the counting path in run(): these
+    # rows are what the shortlist reads. Gating only the counter produced a
+    # tidy "delisted 781" line in the stats while every one of them stayed in
+    # the digest.
+    gate, tier = gate_with_tier(job, cfg, delisted=delisted)
     result.tier = tier
     if gate:
         result.passed = False
@@ -531,6 +542,7 @@ def score_job(job: sqlite3.Row, profile_name: str, cfg: dict, *, ats_only: bool)
 def run(conn: sqlite3.Connection, cfg: dict | None = None) -> dict:
     cfg = cfg or load_config()
     early = db.ats_only_keys(conn)
+    gone = db.delisted_ids(conn)
     jobs = conn.execute("SELECT * FROM jobs").fetchall()
     stamp = db.now()
 
@@ -541,7 +553,8 @@ def run(conn: sqlite3.Connection, cfg: dict | None = None) -> dict:
     for job in jobs:
         is_early = job["dedup_key"] in early
         for profile_name in cfg["profiles"]:
-            score = score_job(job, profile_name, cfg, ats_only=is_early)
+            score = score_job(job, profile_name, cfg, ats_only=is_early,
+                              delisted=gone)
             conn.execute(
                 """INSERT INTO scores
                        (job_id, profile, score, passed, tier, gate, reasons, ranked_at)
@@ -553,7 +566,7 @@ def run(conn: sqlite3.Connection, cfg: dict | None = None) -> dict:
             )
         # Gates are profile-independent, so evaluate once per posting rather
         # than re-scoring against the first profile purely to count.
-        gate, tier = gate_with_tier(job, cfg)
+        gate, tier = gate_with_tier(job, cfg, delisted=gone)
         if gate:
             gates[gate.split(":")[0]] = gates.get(gate.split(":")[0], 0) + 1
         elif tier == "stretch":

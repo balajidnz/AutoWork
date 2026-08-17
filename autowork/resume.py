@@ -24,7 +24,7 @@ from fpdf import FPDF
 # raises rather than degrading, so they are mapped rather than risked.
 _TRANSLITERATE = {
     # No padding around the replacement: the source already spaces its dashes,
-    # and " - " turns "SuperAGI — Engineer" into "SuperAGI  -  Engineer".
+    # and " - " turns "Northwind — Engineer" into "Northwind  -  Engineer".
     "—": "-", "–": "-", "‒": "-", "−": "-",
     "‘": "'", "’": "'", "“": '"', "”": '"',
     "…": "...", "•": "-", "₹": "INR ", "≤": "<=",
@@ -32,7 +32,7 @@ _TRANSLITERATE = {
 }
 _TRANSLATION = str.maketrans({k: v for k, v in _TRANSLITERATE.items()})
 
-# "SuperAGI — Full-Stack Engineer (SDE-1), May 2025 – present"
+# "Northwind — Full-Stack Engineer (SDE-1), May 2025 – present"
 _TRAILING_DATE = re.compile(
     r"^(?P<left>.+?)[,–—-]\s*(?P<date>"
     r"(?:[A-Z][a-z]{2,8}\s+\d{4}|\d{4})\s*[–—-]\s*"

@@ -161,10 +161,68 @@ interview.
 
 ---
 
-## Optional: get it emailed to you every morning
+## Optional: get the list sent to you
 
-Only worth doing if you want it hands-off. See the "Scheduling" section of
-[README.md](README.md) — it runs free on GitHub Actions.
+Instead of opening the page, have it arrive by email or Telegram. Both are
+free, and you can use either or both.
+
+Create a file called **`.env`** in the `AutoWork` folder. It is ignored by git,
+so nothing in it is ever committed or shared.
+
+### Email (Gmail)
+
+You need a **Google app password** — not your normal password, which Google
+will reject.
+
+1. Turn on 2-Step Verification: **myaccount.google.com/security**. App
+   passwords do not exist until you do; if the page says "the setting you are
+   looking for is not available", this is why.
+2. Go to **myaccount.google.com/apppasswords**, type any name (e.g. `AutoWork`)
+   and create it.
+3. Copy the 16 characters it shows, **with the spaces removed**.
+
+Put this in `.env`:
+
+```
+SMTP_USER=you@gmail.com
+SMTP_PASS=abcdefghijklmnop
+DIGEST_TO=you@gmail.com
+```
+
+### Telegram
+
+1. In Telegram, message **@BotFather**, send `/newbot`, and follow it. It gives
+   you a token.
+2. **Send your new bot any message** — it cannot find you until you do.
+3. Then run:
+
+   ```
+   uv run autowork telegram-setup --token PASTE_YOUR_TOKEN
+   ```
+
+   It prints your chat ID. Add both to `.env`:
+
+```
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+TELEGRAM_CHAT_ID=987654321
+```
+
+### Check it, then send
+
+```
+uv run autowork doctor          # says what it can see; never prints the values
+uv run autowork digest --dry-run    # builds it, sends nothing
+uv run autowork digest              # actually sends
+```
+
+If the email is rejected, `doctor` will tell you why — an app password is
+exactly 16 characters with no spaces, and that is the usual mistake.
+
+### Every morning, without you
+
+To have it run on its own, use GitHub Actions — free, and it needs no machine
+of yours to be switched on. It is a bit more setup; see the **Scheduling**
+section of [README.md](README.md).
 
 ---
 

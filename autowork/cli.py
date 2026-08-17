@@ -13,6 +13,64 @@ from . import contact as contact_mod
 from . import coverage as cov, db, deliver, digest, poll, rank, resume, track, watchlist
 
 
+def load_dotenv(path: Path | None = None) -> int:
+    """Read `.env` into the environment. Returns how many keys were set.
+
+    No dependency: the format worth supporting is `KEY=value` per line, and
+    pulling in python-dotenv for that would be the only runtime dependency
+    added since the project started. Real environment variables always win, so
+    CI — which sets them directly — is unaffected.
+    """
+    import os
+
+    path = path or (db.REPO_ROOT / ".env")
+    if not path.exists():
+        return 0
+    count = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+            count += 1
+    return count
+
+
+def cmd_whoami(args: argparse.Namespace) -> int:
+    """Print the candidate context, for the /fit and /tailor prompts.
+
+    Those commands used to hard-code one person's experience, employer and
+    salary, so anyone else running them got advice calibrated to a stranger.
+    """
+    from autowork import profile_build
+
+    if not profile_build.exists():
+        print("no profile yet — run `uv run autowork console`", file=sys.stderr)
+        return 1
+    cfg = rank.load_config()
+    c = cfg["candidate"]
+    months = (c.get("experience_months_as_of") or {}).get("months")
+    print(f"Name: {c.get('name') or 'not set'}")
+    print(f"Based in: {c.get('base') or 'not set'}")
+    if months:
+        print(f"Experience: ~{months} months ({months / 12:.1f} years)")
+    if c.get("current_ctc_lpa"):
+        print(f"Current CTC: {c['current_ctc_lpa']} LPA — the role should match or beat it")
+    print(f"Goal: {c.get('goal') or 'not set'}")
+    families = rank.selected_families(cfg) or ["engineering"]
+    print(f"Open to: {', '.join(families)}")
+    print("\nResumes:")
+    for slug, profile in cfg["profiles"].items():
+        titles = ", ".join(list(profile.get("target_titles") or {})[:6])
+        print(f"  {slug}: {profile.get('resume') or '(no file)'}")
+        print(f"    label:  {profile.get('label') or slug}")
+        print(f"    targets: {titles or 'none set'}")
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     companies = watchlist.load_companies()
     if args.company:
@@ -527,6 +585,10 @@ def cmd_export(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before anything reads os.environ. Real environment variables take
+    # precedence, so the scheduled run — which sets them from secrets — is
+    # unaffected by a stray .env in the checkout.
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="autowork", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -616,6 +678,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="generate with a local Ollama model, e.g. llama3.1")
     p.add_argument("--resume", help="override which resume file to adapt")
     p.set_defaults(func=cmd_tailor)
+
+    p = sub.add_parser("whoami", help="print your profile context (used by /fit and /tailor)")
+    p.set_defaults(func=cmd_whoami)
 
     p = sub.add_parser("reset", help="clear the previous owner's profile and history")
     p.add_argument("--yes", action="store_true", help="skip the confirmation")

@@ -6,19 +6,24 @@ import pytest
 
 from autowork import resume
 
-SAMPLE = """# Balaji P — infra base
-Bengaluru, India · a@b.com · +91 0000
+# A made-up person. This file is public, and a real CV in a test fixture
+# publishes an employer and a set of achievements to everyone who clones it.
+# Every character that matters to a test is still here: the em-dash suffix, the
+# blockquote, a hard-wrapped bullet and paragraph, inline bold, and a role
+# heading with a trailing date.
+SAMPLE = """# Priya Sharma — infra base
+Pune, India · a@b.com · +91 0000
 
 > Guidance for the tailoring model, not resume content.
 
 ## Summary
-Full-stack engineer with 2 years at SuperAGI, converted from intern to SDE-1,
+Full-stack engineer with 2 years at Northwind, converted from intern to SDE-1,
 shipping product across the stack.
 
-## SuperAGI — Full-Stack Engineer (SDE-1), May 2025 – present
+## Northwind — Full-Stack Engineer (SDE-1), May 2025 – present
 
 ### Cloud infrastructure
-- Cut org-wide AWS spend **41%**, from $53.4K to $31.6K/month, and
+- Cut org-wide cloud spend **41%**, from $53.4K to $31.6K/month, and
   migrated ~3.26M records across 4 databases.
 - Owned production incident response.
 
@@ -37,7 +42,7 @@ def kinds(blocks):
 
 
 def test_name_drops_the_variant_suffix():
-    assert resume.parse("# Balaji P — infra base")[0].text == "Balaji P"
+    assert resume.parse("# Priya Sharma — infra base")[0].text == "Priya Sharma"
 
 
 def test_contact_line_follows_the_name(blocks):
@@ -55,7 +60,7 @@ def test_short_heading_is_a_section(blocks):
 
 def test_role_heading_splits_off_the_date(blocks):
     role = next(b for b in blocks if b.kind == "role")
-    assert role.text == "SuperAGI — Full-Stack Engineer (SDE-1)"
+    assert role.text == "Northwind — Full-Stack Engineer (SDE-1)"
     assert role.right == "May 2025 – present"
 
 
@@ -95,7 +100,7 @@ def test_runs(text, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("SuperAGI — Engineer", "SuperAGI - Engineer"),   # no doubled spaces
+        ("Northwind — Engineer", "Northwind - Engineer"),   # no doubled spaces
         ("2025 – present", "2025 - present"),
         ("₹22L", "INR 22L"),
         ("don’t", "don't"),
