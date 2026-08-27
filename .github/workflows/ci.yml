@@ -29,5 +29,33 @@ jobs:
 
       # The gates read their thresholds and blocklists from profiles.json, so a
       # malformed edit there breaks ranking at runtime rather than at import.
-      - name: Config parses
-        run: uv run python -c "from autowork import rank; rank.load_config()"
+      # The user's own profile is gitignored — it carries a salary and target
+      # titles — so there is none to load here. What CI can check is what the
+      # repository actually ships: the shared template, and that the setup
+      # wizard's builder turns answers into a config the ranker accepts.
+      - name: Shipped config is usable
+        run: |
+          uv run python - <<'PY'
+          import json, tempfile, pathlib
+          from autowork import profile_build, rank
+          # build() saves each resume's text next to the profile. Redirect it:
+          # a check should not leave files in the working tree.
+          profile_build.RESUME_DIR = pathlib.Path(tempfile.mkdtemp())
+          template = json.loads(profile_build.TEMPLATE.read_text())
+          assert template["role_families"], "template lost its role families"
+          assert template["constraints"]["block_role_terms"], "template lost its gates"
+
+          built = profile_build.build({
+              "name": "CI", "city": "Bengaluru, India", "years": 1.5,
+              "experience_band": "0-2", "families": ["engineering"],
+              "resumes": [{"slug": "main", "label": "CV", "path": "cv.md",
+                           "roles": ["Software Engineer"], "skills": ["Python"],
+                           "key_skills": ["Python"], "text": "python"}],
+          })
+          problems = [p for p in profile_build.validate(built)
+                      if "resume file" not in p]   # no files in a CI checkout
+          assert not problems, problems
+          rank.location_tier("Bengaluru, India", False, built)
+          print(f"template ok; generated config has "
+                f"{len(built['profiles'])} profile(s)")
+          PY

@@ -23,8 +23,14 @@ from . import db
 PROFILES_PATH = db.REPO_ROOT / "profile" / "profiles.json"
 
 
-def load_config(path: Path = PROFILES_PATH) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+def load_config(path: Path | None = None) -> dict:
+    """Read the user's profile.
+
+    The default resolves at call time, not at import: `PROFILES_PATH` is a
+    module attribute the tests redirect, and a default argument would have been
+    bound once when the module first loaded and ignored every redirect.
+    """
+    return json.loads((path or PROFILES_PATH).read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------- seniority
