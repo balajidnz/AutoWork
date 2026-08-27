@@ -34,6 +34,16 @@ MAX_UPLOAD = 12 * 1024 * 1024
 # so a write is only honoured if it carries the token this process just minted.
 TOKEN = secrets.token_urlsafe(24)
 
+# One refresh at a time, and its progress, so the page can show what is
+# happening rather than appearing to hang for two minutes.
+REFRESH = {"running": False, "step": "", "error": "", "finished_at": ""}
+
+# Nothing here is metered, but a refresh hits 255 career pages plus LinkedIn.
+# Boards published for free do not deserve a request every thirty seconds, and
+# LinkedIn will rate-limit an IP that asks too often — which would silently
+# degrade a source rather than fail loudly.
+REFRESH_COOLDOWN_MINUTES = 15
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "autowork"
@@ -90,14 +100,24 @@ class Handler(BaseHTTPRequestHandler):
     def _state(self) -> dict:
         """What the page needs before deciding whether to show setup or the list."""
         configured = profile_build.exists()
-        postings = 0
+        postings, stale_days = 0, None
         if configured:
             try:
                 conn = db.connect()
                 postings = conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
+                # How old the local corpus is. The scheduled run polls on a
+                # GitHub runner and throws that database away, so a laptop that
+                # never runs `poll` shows the same list for weeks — measured at
+                # 13 days on a console in daily use, with nothing on screen
+                # saying so.
+                newest = conn.execute("SELECT MAX(last_seen) m FROM jobs").fetchone()["m"]
+                if newest:
+                    from datetime import UTC, datetime
+                    stale_days = (datetime.now(UTC) - datetime.fromisoformat(newest)).days
             except Exception:  # noqa: BLE001 — an empty db is a normal first run
                 postings = 0
-        return {"configured": configured, "postings": postings}
+        return {"configured": configured, "postings": postings,
+                "staleDays": stale_days, "refresh": REFRESH}
 
     # ----------------------------------------------------------------- POST
 
@@ -115,7 +135,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "unauthorised — reload the page"}, 403)
             return
         try:
-            if route == "/api/advise":
+            if route == "/api/refresh":
+                self._json(self._refresh())
+            elif route == "/api/advise":
                 self._json(self._advise(json.loads(self._body() or b"{}")))
             elif route == "/api/tailor":
                 self._json(self._tailor(json.loads(self._body() or b"{}")))
@@ -182,6 +204,47 @@ class Handler(BaseHTTPRequestHandler):
             "script": str(script.relative_to(db.REPO_ROOT)),
             "resume": ctx["resume"],
         }
+
+    def _refresh(self) -> dict:
+        """Poll the boards and re-rank, in the background.
+
+        The alternative is telling someone to go and run two commands in a
+        terminal, which is exactly the step that silently did not happen for
+        thirteen days.
+        """
+        if REFRESH["running"]:
+            return {"ok": True, "already": True, **REFRESH}
+
+        if REFRESH["finished_at"]:
+            from datetime import UTC, datetime
+            mins = (datetime.now(UTC)
+                    - datetime.fromisoformat(REFRESH["finished_at"])).total_seconds() / 60
+            if mins < REFRESH_COOLDOWN_MINUTES:
+                wait = int(REFRESH_COOLDOWN_MINUTES - mins) + 1
+                return {"ok": False, "error":
+                        f"Just refreshed. Boards update slowly — try again in "
+                        f"{wait} minute{'s' if wait != 1 else ''}."}
+
+        def work() -> None:
+            from autowork import poll as poll_mod
+
+            REFRESH.update(running=True, step="reading company career pages…", error="")
+            try:
+                conn = db.connect()
+                poll_mod.run(conn)
+                REFRESH["step"] = "scoring against your resumes…"
+                rank.run(conn, rank.load_config())
+                REFRESH["step"] = "clearing out closed roles…"
+                db.prune(conn, rank.load_config()["constraints"]["max_age_days"])
+                REFRESH["finished_at"] = db.now()
+                REFRESH["step"] = ""
+            except Exception as exc:  # noqa: BLE001 — surfaced on the page
+                REFRESH["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                REFRESH["running"] = False
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True, "started": True}
 
     def _advise(self, payload: dict) -> dict:
         """Open a model on the question of what to target.

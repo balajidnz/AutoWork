@@ -146,3 +146,69 @@ def test_dedup_key_separates_different_roles():
     a = db.Job(source="greenhouse", company="Acme", title="Backend Engineer", url="u")
     b = db.Job(source="greenhouse", company="Acme", title="Frontend Engineer", url="u")
     assert a.dedup_key != b.dedup_key
+
+
+# ------------------------------------------------------------------ amazon
+
+
+AMAZON_ITEM = {
+    "id_icims": "10515122",
+    "title": "Software Development Engineer, Last Mile",
+    "company_name": "Amazon Development Centre India",
+    "normalized_location": "Bengaluru, Karnataka, IND",
+    "location": "IN, KA, Bengaluru",
+    "posted_date": "August 25, 2026",
+    "job_path": "/en/jobs/10515122/software-development-engineer",
+    "description": "<p>Build systems at scale.</p>",
+    "basic_qualifications": "- 2+ years of professional software development experience",
+    "preferred_qualifications": "- Experience with Java",
+    "business_category": "operations-technology",
+    "is_intern": False,
+}
+
+
+def test_amazon_maps_a_posting():
+    from autowork.sources import amazon
+
+    job = amazon._job(AMAZON_ITEM)
+    assert job.source == "amazon"
+    assert job.company_token == "amazon"
+    assert job.location == "Bengaluru, Karnataka, IND"
+    assert job.url == "https://www.amazon.jobs/en/jobs/10515122/software-development-engineer"
+    assert job.source_id == "10515122"
+
+
+def test_amazon_keeps_the_qualifications_the_gates_read():
+    """basic_qualifications carries the years bar; description carries the rest.
+    Dropping either would gate wrongly or score wrongly."""
+    from autowork import rank
+    from autowork.sources import amazon
+
+    job = amazon._job(AMAZON_ITEM)
+    assert "Build systems at scale" in job.description
+    assert rank.required_years(job.description, job.title) == 2.0
+
+
+def test_amazon_parses_the_portal_date_format():
+    from autowork.sources import amazon
+
+    # Aware, not a bare date: a naive timestamp crashed the whole rank run
+    # when the age arithmetic compared it against an aware now(UTC).
+    assert amazon._posted("August 25, 2026") == "2026-08-25T00:00:00+00:00"
+    assert amazon._posted("not a date") is None
+    assert amazon._posted(None) is None
+
+
+def test_amazon_flags_internships_from_the_portals_own_field():
+    from autowork.sources import amazon
+
+    assert amazon._job({**AMAZON_ITEM, "is_intern": True}).level_hint == "intern"
+    assert amazon._job(AMAZON_ITEM).level_hint is None
+
+
+def test_amazon_survives_a_posting_with_nothing_in_it():
+    from autowork.sources import amazon
+
+    job = amazon._job({})
+    assert job.company == "Amazon"
+    assert job.url == "https://www.amazon.jobs"

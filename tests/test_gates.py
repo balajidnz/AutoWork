@@ -74,8 +74,12 @@ def test_title_level(title, expected):
         ("We need 3+ years of experience in Go.", 3),
         ("1-3 years of professional experience required.", 1),
         ("At least 18 months of experience with Rails.", 1.5),
-        # the lowest stated bar wins — deliberately lenient
-        ("Minimum of 5 years experience; 2+ years with Kubernetes.", 2),
+        # Reversed after two weeks of live use. "The lowest stated bar wins"
+        # was deliberately lenient, but a posting states its general bar first
+        # and narrower ones after: this is a five-year role that wants two
+        # years of Kubernetes, and reading it as a two-year role put it near
+        # the top of the list for someone with eighteen months.
+        ("Minimum of 5 years experience; 2+ years with Kubernetes.", 5),
         # company boilerplate is not an experience requirement
         ("Founded 10 years ago, we now serve millions.", None),
         ("No stated requirement here.", None),
@@ -223,3 +227,78 @@ def test_five_year_ask_is_rejected(cfg):
 def test_clean_posting_is_core(cfg):
     gate, tier = rank.gate_with_tier(job(), cfg)
     assert gate is None and tier == "core"
+
+
+# ------------------------------------------------- experience bar, from life
+#
+# Every case below is a posting that reached a real shortlist for someone with
+# eighteen months of experience. Two weeks of daily use surfaced them; the
+# parser read each one wrongly.
+
+
+@pytest.mark.parametrize("text,expected", [
+    # The context allowlist wanted the word "experience" nearby. These are
+    # genuine bars that never say it, and both ranked highly for months.
+    ("Have 5+ years in SRE, production operations, platform engineering", 5.0),
+    ("5+ years in ML systems, with 2+ years on inference serving", 5.0),
+    # Taking the minimum of every mention read an eight-year role as three.
+    ("8+ years of software development experience and 3+ years in leading teams", 8.0),
+    # …but a genuine "overall, then narrower" posting must still read the
+    # general bar, which is also the first one stated.
+    ("2+ years of experience overall, 5+ years with Go", 2.0),
+    # Greenhouse markdown-escapes punctuation. Unescaped, the range regex
+    # skipped the 2 and read the top of the range.
+    (r"* 2\-5 years of professional software engineering experience", 2.0),
+    ("2-5 years of professional software engineering experience", 2.0),
+    ("18+ months of professional experience", 1.5),
+])
+def test_required_years_reads_the_real_bar(text, expected):
+    assert rank.required_years(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "Generous Equity Grant vested over 4 years",
+    "With over 160 years of experience as a family company",
+    "Here we are 25 years later, having pioneered an industry",
+    "Unlimited PTO after 2 years of service",
+])
+def test_years_that_are_not_a_requirement_are_ignored(text):
+    """A benefits list sits inches from the word 'experience'; an allowlist
+    alone cannot separate equity vesting from an experience bar."""
+    assert rank.required_years(text) is None
+
+
+@pytest.mark.parametrize("title,expected", [
+    ("Software Engineer (5-7 years)", 5.0),
+    ("Software Engineer, React Native (3-5 Years)", 3.0),
+    ("Business Intelligence Engineer (2-4 years)", 2.0),
+    ("Software Engineer II", None),
+    ("Engineer, Vue 3", None),          # a version number is not a bar
+])
+def test_the_title_states_the_bar_most_explicitly(title, expected):
+    """Reading only the description missed "(5-7 years)" entirely."""
+    assert rank.required_years("", title) == expected
+
+
+def test_title_overrides_a_vaguer_description():
+    assert rank.required_years("We value curiosity and 1+ years of experience",
+                               "Staff Engineer (8-12 years)") == 8.0
+
+
+def test_age_survives_a_source_that_emits_a_bare_date():
+    """One adapter returning "2026-08-25" instead of a full timestamp raised
+    TypeError inside the gate and took down the ranking of 20,000 postings."""
+    from datetime import UTC, datetime, timedelta
+
+    naive = (datetime.now(UTC) - timedelta(days=5)).date().isoformat()
+    aware = (datetime.now(UTC) - timedelta(days=5)).isoformat()
+    assert rank.age_days(naive) == rank.age_days(aware) == 5
+
+
+def test_freshness_shares_the_one_date_helper():
+    """It had its own copy of the arithmetic, which is how the crash reached it."""
+    from datetime import UTC, datetime, timedelta
+
+    bare = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
+    points, reason = rank._freshness(bare)
+    assert points > 0 and "1d ago" in reason

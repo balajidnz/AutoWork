@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import httpx
 
 from . import db, rank
-from .sources import BoardNotFound, search
+from .sources import BoardNotFound, amazon, search
 from .watchlist import ADAPTERS, USER_AGENT
 
 
@@ -90,7 +90,24 @@ def run(conn: sqlite3.Connection, *, concurrency: int = 12) -> dict:
 
     # Keyword search runs after the boards: the ATS postings are the primary
     # source, and if a search fails the digest should still go out.
-    search_cfg = (rank.load_config().get("job_search") or {})
+    cfg = rank.load_config()
+
+    # Companies that run their own portal instead of an ATS. `verify` resolves
+    # none of them, so each needs its own adapter; Amazon is the one whose
+    # portal answers an unauthenticated GET with JSON.
+    portal_cfg = (cfg.get("portals") or {}).get("amazon") or {}
+    portals = 0
+    if portal_cfg.get("enabled"):
+        try:
+            found = amazon.fetch(portal_cfg.get("queries") or ["software development engineer"],
+                                 country=portal_cfg.get("country", "IND"),
+                                 limit=int(portal_cfg.get("limit", 400)))
+            db.upsert_jobs(conn, found)
+            portals = len(found)
+        except Exception as exc:  # noqa: BLE001 — a portal must not stop the run
+            errors.append(f"amazon -> {type(exc).__name__}: {exc}")
+
+    search_cfg = (cfg.get("job_search") or {})
     searched = 0
     if search_cfg.get("enabled"):
         try:
@@ -103,6 +120,7 @@ def run(conn: sqlite3.Connection, *, concurrency: int = 12) -> dict:
     new, updated = db.upsert_jobs(conn, all_jobs)
     return {
         "searched": searched,
+        "portals": portals,
         "boards": len(boards),
         "fetched": len(all_jobs),
         "new": new,

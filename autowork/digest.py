@@ -59,7 +59,8 @@ def _age_days(posted_at: str | None) -> int | None:
     if not posted_at:
         return None
     try:
-        return (datetime.now(UTC) - datetime.fromisoformat(posted_at)).days
+        from .rank import age_days
+        return age_days(posted_at)
     except ValueError:
         return None
 

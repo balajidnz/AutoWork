@@ -25,6 +25,8 @@ profile/tailored/*
 
 data/status.json
 data/seen.txt
+# When you last opened the console, so it can mark what arrived since.
+data/visits.json
 data/contacts.json
 data/digest/
 data/tailor/

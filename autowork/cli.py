@@ -119,6 +119,7 @@ def cmd_poll(args: argparse.Namespace) -> int:
     print(
         f"polled {stats['boards']} boards"
         + (f" + {stats['searched']} from search" if stats.get("searched") else "")
+        + (f" + {stats['portals']} from Amazon" if stats.get("portals") else "")
         + f" -> {stats['fetched']} postings "
         f"({stats['new']} new, {stats['updated']} already known)"
     )
@@ -460,6 +461,21 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prune(args: argparse.Namespace) -> int:
+    """Delete closed and aged-out postings from the local database."""
+    conn = db.connect()
+    cutoff = args.max_age or rank.load_config()["constraints"]["max_age_days"]
+    stats = db.prune(conn, cutoff)
+    print(f"{stats['before']:,} postings -> {stats['after']:,}")
+    print(f"  {stats['delisted']:,} no longer listed on their board")
+    print(f"  {stats['aged_out']:,} older than {cutoff} days")
+    if stats["kept_for_status"]:
+        print(f"  {stats['kept_for_status']} kept — you have marked them applied or skipped")
+    print(f"  {stats['removed']:,} removed")
+    conn.execute("VACUUM")
+    return 0
+
+
 def cmd_reset(args: argparse.Namespace) -> int:
     """Clear the previous owner's data so a fresh clone belongs to you.
 
@@ -681,6 +697,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("whoami", help="print your profile context (used by /fit and /tailor)")
     p.set_defaults(func=cmd_whoami)
+
+    p = sub.add_parser("prune", help="delete closed and aged-out postings")
+    p.add_argument("--max-age", type=int, help="override max_age_days")
+    p.set_defaults(func=cmd_prune)
 
     p = sub.add_parser("reset", help="clear the previous owner's profile and history")
     p.add_argument("--yes", action="store_true", help="skip the confirmation")

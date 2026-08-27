@@ -21,8 +21,9 @@ optimises for reaching postings early and directly.
 | 4 | Hermes MCP wrapper | not started |
 
 254 verified boards across Greenhouse, Lever, Ashby and SmartRecruiters, plus
-LinkedIn keyword search; ~20,000 postings per run; **48 core + 23 stretch**
-eligible across three resume tracks — infra, product and agentic.
+LinkedIn keyword search; ~24,000 postings per run, pruned to the ~7,000 still
+open; **62 core + 38 stretch** eligible across three resume tracks — infra,
+product and agentic, with a median age of 14 days.
 
 ## Cost
 
@@ -128,6 +129,35 @@ gh secret set PROFILE_JSON < profile/profiles.json
 Re-set it whenever you change your profile — the wizard writes your laptop's
 copy, and the scheduled run only ever sees the secret.
 
+## Companies that run their own portal
+
+`verify` resolves a company only if it uses Greenhouse, Lever, Ashby or
+SmartRecruiters. Probed against all four, Amazon, Netflix, Google, Microsoft,
+Apple and Meta resolve to nothing — they run their own careers sites. Airbnb
+was the one exception and is now on the watchlist.
+
+Of those portals, Amazon's answers an unauthenticated GET with JSON, so it has
+an adapter in `autowork/sources/amazon.py`:
+
+```
+GET https://www.amazon.jobs/en/search.json?normalized_country_code[]=IND&base_query=...
+```
+
+`normalized_country_code[]` is the filter that works; `country[]` and
+`loc_query` both return 10,000 hits led by Kuala Lumpur and Sunnyvale.
+
+Two things it taught the rest of the pipeline. The portal reports **legal
+entities** — "ADCI - Karnataka", "ADCI HYD 13 SEZ", "ADSIPL - Telangana" —
+which split one employer across the per-company cap and the
+duplicate-application guard, so the adapter normalises them to "Amazon" and
+keeps the entity in `department`. And 454 Amazon postings put **136 of 249
+shortlist rows under one company**, which is why `shortlist` now caps each
+employer at `signals.max_per_company`.
+
+Worth saying plainly: a big-company posting is the opposite of this project's
+premise. It is here because Amazon India hires SDE-1s in volume, not because it
+fits the thesis.
+
 ## Review console
 
 ```sh
@@ -167,6 +197,22 @@ role there.
 
 Decisions persist to `data/status.json` rather than the database, which is
 rebuilt from the boards on every poll.
+
+**Freshness is a multiplier, not a bonus.** It used to add at most 10 points,
+which a strong skill match simply outweighed: on a live shortlist the median
+role was 22 days old and a 37-day-old posting ranked second. Score is now
+multiplied by `0.5 ** (age / freshness_half_life_days)`, and undated rows fall
+back to `first_seen` — LinkedIn returns no post date, and treating those as
+ageless let them bypass the staleness gate and then top the list.
+
+**`autowork prune`** deletes postings the board no longer lists or that are
+past `max_age_days`, keeping anything you have marked. First run on a corpus in
+daily use: 24,317 rows to 7,134, and the database from 184MB to 56MB.
+
+The console shows how old its corpus is and offers to refresh it. The scheduled
+run polls on a GitHub runner and discards that database, so a laptop that never
+polls shows the same list indefinitely — measured at 13 days, with nothing on
+screen saying so.
 
 ## Role families — using this outside engineering
 

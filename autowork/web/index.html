@@ -81,6 +81,18 @@ input:focus, select:focus, button:focus-visible {
 .b-fair   { color:var(--fair);   background:var(--fair-bg); }
 .b-weak   { color:var(--weak);   background:var(--weak-bg); }
 .b-state  { color:var(--dim); background:var(--weak-bg); }
+.b-new    { color:var(--accent-ink); background:var(--accent); letter-spacing:.04em; }
+.divider { display:flex; align-items:center; gap:10px; margin:22px 0 10px;
+  color:var(--dim); font-size:13px; }
+.divider::after { content:""; flex:1; height:1px; background:var(--line); }
+.stale { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--warn-bg); color:var(--warn); border-radius:10px;
+  padding:10px 14px; margin:10px 0; font-size:13px; }
+.stale button { margin-left:auto; border:1px solid currentColor; background:transparent;
+  color:inherit; border-radius:8px; padding:5px 12px; font-size:13px; }
+.stale button[disabled] { opacity:.6; cursor:default; }
+.divider button { border:1px solid var(--line); background:var(--panel);
+  color:var(--dim); border-radius:8px; padding:3px 10px; font-size:12px; }
 .chev { color:var(--dim); font-size:12px; width:12px; }
 
 /* ---------------------------------------------------------------- detail */
@@ -184,6 +196,7 @@ async function api(path, opts = {}) {
 const view = {
   jobs: [], meta: {}, open: null, cursor: 0,
   q: "", band: "all", homeOnly: false, hideDone: true, sort: "match", family: "all",
+  showRest: false,
 };
 
 const BANDS = { strong: 1, good: 2, fair: 3, weak: 4 };
@@ -208,7 +221,9 @@ function visible() {
     new: (a, b) => (b.posted_at || "").localeCompare(a.posted_at || ""),
     company: (a, b) => a.company.localeCompare(b.company),
   }[view.sort];
-  return [...rows].sort(by);
+  // New first, then the chosen sort within each group, so the keyboard cursor
+  // walks the list in the order it is actually drawn.
+  return [...rows].sort((a, b) => (b.isNew - a.isNew) || by(a, b));
 }
 
 function rowHTML(j, i) {
@@ -220,9 +235,13 @@ function rowHTML(j, i) {
       <div class="pos">${j.position}</div>
       <div>
         <div class="title">${esc(j.title)}</div>
-        <div class="meta">${esc(j.company)} · ${esc(j.location)}${j.age ? " · " + esc(j.age) : ""}</div>
+        <div class="meta">${esc(j.company)} · ${esc(j.location)} · ${
+          j.ageDays == null ? "age unknown"
+            : j.ageDays === 0 ? "posted today"
+            : `${j.ageDays}d old${j.ageEstimated ? " (est)" : ""}`}</div>
       </div>
       <div class="right">
+        ${j.isNew ? `<span class="badge b-new">NEW</span>` : ""}
         ${j.stateLabel ? `<span class="badge b-state">${esc(j.stateLabel)}</span>` : ""}
         <span class="badge b-${j.band}">${esc(j.bandLabel)}</span>
         <span class="chev">${open ? "▾" : "▸"}</span>
@@ -272,6 +291,44 @@ function detailHTML(j) {
   </div>`;
 }
 
+function staleHTML() {
+  // The scheduled run polls on a GitHub runner and discards its database, so
+  // this laptop's copy only moves when someone runs `poll` here. One console
+  // sat on a thirteen-day-old corpus with nothing on screen admitting it.
+  const r = view.refresh || {};
+  if (r.running) {
+    return `<div class="stale"><span class="spin"></span>
+      Fetching new roles — ${esc(r.step || "working…")} This takes a minute or two.</div>`;
+  }
+  if (r.error) return `<div class="stale">Refresh failed: ${esc(r.error)}</div>`;
+  const d = view.staleDays;
+  if (d == null || d < 1) return "";
+  return `<div class="stale">
+    ${d === 1 ? "These roles were fetched yesterday."
+              : `These roles are <b>${d} days old</b> — nothing new has been fetched since.`}
+    <button data-act="refresh">Fetch new roles</button></div>`;
+}
+
+function listHTML(rows) {
+  // New arrivals first, the rest folded away. Two weeks of daily use turned
+  // into re-reading the same seventy roles every morning with no way to tell
+  // which had just appeared.
+  const fresh = rows.filter(j => j.isNew);
+  const rest = rows.filter(j => !j.isNew);
+  if (!fresh.length) return rows.map(rowHTML).join("");
+
+  let html = `<div class="divider">${fresh.length} new since you last looked</div>`;
+  html += fresh.map((j, i) => rowHTML(j, i)).join("");
+  if (rest.length) {
+    html += `<div class="divider">
+      ${rest.length} already reviewed
+      <button data-act="toggle-rest">${view.showRest ? "hide" : "show"}</button>
+    </div>`;
+    if (view.showRest) html += rest.map((j, i) => rowHTML(j, fresh.length + i)).join("");
+  }
+  return html;
+}
+
 function render() {
   const rows = visible();
   if (view.cursor >= rows.length) view.cursor = Math.max(0, rows.length - 1);
@@ -285,6 +342,7 @@ function render() {
       <button class="btn small" id="editprofile" style="margin-left:auto">
         ⚙ Your profile &amp; resumes</button>
     </div>
+    ${staleHTML()}
     ${(m.followUps || []).length ? `<div class="alert" style="margin:10px 0">⏰ Time to follow up:
       ${m.followUps.map(f => `${esc(f.company)} (${f.days}d)`).join(", ")}</div>` : ""}
     <div class="controls">
@@ -311,7 +369,7 @@ function render() {
   <div class="wrap">
     <div class="count">${rows.length} role${rows.length === 1 ? "" : "s"}${
       view.q ? ` matching “${esc(view.q)}”` : ""}</div>
-    ${rows.length ? rows.map(rowHTML).join("")
+    ${rows.length ? listHTML(rows)
       : `<div class="empty">Nothing here.${view.hideDone
           ? " You've handled everything — untick <b>Hide handled</b> to see them again."
           : " Try a shorter search."}</div>`}
@@ -402,7 +460,32 @@ app.addEventListener("click", ev => {
   const b = ev.target.closest("#band button");
   if (b) { view.band = b.dataset.v; view.cursor = 0; render(); }
   if (ev.target.closest("#editprofile")) openProfile();
+  if (ev.target.closest("[data-act=toggle-rest]")) { view.showRest = !view.showRest; render(); }
+  if (ev.target.closest("[data-act=refresh]")) startRefresh();
 });
+
+async function startRefresh() {
+  try {
+    await api("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  } catch (err) {
+    view.refresh = { error: err.message }; render(); return;
+  }
+  view.refresh = { running: true, step: "starting…" };
+  render();
+  const tick = setInterval(async () => {
+    try {
+      const s = await api("/api/state");
+      view.refresh = s.refresh || {};
+      view.staleDays = s.staleDays;
+      if (!view.refresh.running) {
+        clearInterval(tick);
+        const data = await api("/api/jobs");     // pick up whatever arrived
+        view.jobs = data.jobs; view.meta = data.meta;
+      }
+      render();
+    } catch { clearInterval(tick); }
+  }, 2000);
+}
 
 async function openProfile() {
   const saved = await api("/api/profile");
@@ -766,6 +849,7 @@ uv run autowork rank</pre></div>`;
     }
     const data = await api("/api/jobs");
     view.jobs = data.jobs; view.meta = data.meta;
+    view.staleDays = state.staleDays; view.refresh = state.refresh || {};
     setupMode = false;
     render();
   } catch (err) {

@@ -987,3 +987,172 @@ def test_the_delisted_set_reaches_the_score_rows_not_just_the_counter() -> None:
                            rank.load_config(), ats_only=False, delisted={row["id"]})
     assert score.passed is False
     assert score.gate and score.gate.startswith("delisted")
+
+
+# ------------------------------------------- freshness, after two weeks' use
+
+
+def test_age_falls_back_to_first_seen() -> None:
+    """LinkedIn returns no post date. Treating those rows as ageless let them
+    bypass the staleness gate forever and, once scoring decayed by age, take
+    the top three places on a live shortlist."""
+    from datetime import UTC, datetime, timedelta
+
+    seen = (datetime.now(UTC) - timedelta(days=9)).isoformat()
+    assert rank.age_days(None, seen) == 9
+    assert rank.age_days(None, None) is None
+
+
+def test_undated_postings_do_not_outrank_dated_ones() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    fresh = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    assert rank.freshness_multiplier(fresh, 14) > rank.freshness_multiplier(None, 14)
+
+
+def test_freshness_decays_rather_than_adding_a_bonus() -> None:
+    """A 10-point additive bonus could not outweigh a strong skill match: a
+    37-day-old posting ranked second on a real shortlist."""
+    from datetime import UTC, datetime, timedelta
+
+    def at(days):
+        return rank.freshness_multiplier(
+            (datetime.now(UTC) - timedelta(days=days)).isoformat(), 14)
+
+    assert at(0) == 1.0
+    assert at(14) == pytest.approx(0.5, abs=0.02)
+    assert at(37) < 0.2
+    # A fresh weak match should be able to beat a stale strong one.
+    assert 40 * at(1) > 70 * at(37)
+
+
+def test_column_tolerates_a_missing_projection() -> None:
+    """Rows reach the gates from several SELECTs; reading first_seen directly
+    broke every caller whose query did not include it."""
+    assert rank.column({"a": 1}, "a") == 1
+    assert rank.column({"a": 1}, "first_seen") is None
+
+
+# ------------------------------------------------------- new since last look
+
+
+def test_visit_window_is_stable_within_a_session(tmp_path) -> None:
+    """Advancing on every load means the first reload shows nothing new — you
+    would lose the list by glancing at it twice."""
+    path = tmp_path / "visits.json"
+    assert db.visit_window(path) == db.visit_window(path) == db.visit_window(path)
+
+
+def test_visit_window_rolls_forward_next_session(tmp_path) -> None:
+    path = tmp_path / "visits.json"
+    db.visit_window(path)
+    stamps = json.loads(path.read_text())
+    stamps["current"] = "2026-08-01T08:00:00+00:00"
+    path.write_text(json.dumps(stamps))
+    assert db.visit_window(path).startswith("2026-08-01")
+
+
+# --------------------------------------------------------------- pruning
+
+
+def _job(conn, job_id, token, source, seen, posted=None):
+    conn.execute(
+        """INSERT INTO jobs (id, dedup_key, source, company, company_token, title,
+                             url, first_seen, last_seen, posted_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (job_id, job_id, source, "Acme", token, "SDE", "u", seen, seen, posted))
+    conn.commit()
+
+
+def test_prune_removes_closed_and_aged_out(tmp_path) -> None:
+    conn = db.connect(tmp_path / "p.db")
+    _job(conn, "live", "acme", "greenhouse", "2026-08-26T00:00:00+00:00", "2026-08-25T00:00:00+00:00")
+    _job(conn, "closed", "acme", "greenhouse", "2026-08-01T00:00:00+00:00", "2026-08-25T00:00:00+00:00")
+    _job(conn, "ancient", "other", "greenhouse", "2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00")
+    stats = db.prune(conn, max_age_days=30)
+    left = {r["id"] for r in conn.execute("SELECT id FROM jobs")}
+    assert left == {"live"}
+    assert stats["removed"] == 2
+
+
+def test_prune_keeps_anything_you_acted_on(tmp_path, monkeypatch) -> None:
+    """The tracker reads back through these rows to show what you applied to."""
+    conn = db.connect(tmp_path / "p.db")
+    _job(conn, "applied-to", "acme", "greenhouse", "2020-01-01T00:00:00+00:00",
+         "2020-01-01T00:00:00+00:00")
+    monkeypatch.setattr(db, "load_status", lambda *a, **k: {"applied-to": {"state": "applied"}})
+    db.prune(conn, max_age_days=30)
+    assert conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"] == 1
+
+
+def test_refresh_is_rate_limited() -> None:
+    """A refresh hits 255 career pages plus LinkedIn. Nothing is metered, but
+    free boards do not deserve a request every thirty seconds and LinkedIn
+    rate-limits an IP that asks too often."""
+    import inspect
+
+    from autowork import server
+
+    assert server.REFRESH_COOLDOWN_MINUTES >= 5
+    source = inspect.getsource(server.Handler._refresh)
+    assert 'REFRESH["running"]' in source, "must not run two refreshes at once"
+    assert "REFRESH_COOLDOWN_MINUTES" in source
+
+
+# --------------------------------------------------- one employer, many roles
+
+
+def _scored(conn, job_id, company, score, source="greenhouse"):
+    conn.execute(
+        """INSERT INTO jobs (id, dedup_key, source, company, title, url,
+                             first_seen, last_seen, posted_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (job_id, job_id, source, company, "SDE", "u",
+         "2026-08-26T00:00:00+00:00", "2026-08-26T00:00:00+00:00",
+         "2026-08-26T00:00:00+00:00"))
+    conn.execute(
+        """INSERT INTO scores (job_id, profile, score, passed, tier, reasons, ranked_at)
+           VALUES (?,?,?,1,'core','[]',?)""",
+        (job_id, "main", score, "2026-08-26T00:00:00+00:00"))
+    conn.commit()
+
+
+def test_one_employer_cannot_fill_the_shortlist(tmp_path) -> None:
+    """Adding Amazon put 136 of 249 rows under one company — 55% of the list,
+    crowding out the small boards with short queues the pipeline exists for."""
+    conn = db.connect(tmp_path / "c.db")
+    for i in range(20):
+        _scored(conn, f"big{i}", "Amazon", 90 - i)
+    _scored(conn, "small", "Tiny Startup", 40)
+
+    rows = rank.shortlist(conn, 100, tier=None, per_company=6)
+    companies = [r["company"] for r in rows]
+    assert companies.count("Amazon") == 6
+    assert "Tiny Startup" in companies, "a small employer must still surface"
+
+
+def test_the_cap_keeps_the_best_roles_from_that_employer(tmp_path) -> None:
+    conn = db.connect(tmp_path / "c.db")
+    for i in range(10):
+        _scored(conn, f"j{i}", "Amazon", 50 + i)
+    kept = [r["score"] for r in rank.shortlist(conn, 100, tier=None, per_company=3)]
+    assert sorted(kept, reverse=True) == [59.0, 58.0, 57.0]
+
+
+def test_the_cap_can_be_lifted(tmp_path) -> None:
+    conn = db.connect(tmp_path / "c.db")
+    for i in range(9):
+        _scored(conn, f"j{i}", "Amazon", 50)
+    assert len(rank.shortlist(conn, 100, tier=None, per_company=None)) == 9
+
+
+def test_amazon_is_one_employer_not_five() -> None:
+    """The portal reports legal entities — ADCI - Karnataka, ADCI HYD 13 SEZ,
+    ADSIPL - Telangana — which split one company across the cap and the
+    duplicate-application guard."""
+    from autowork.sources import amazon
+
+    names = {amazon._job({"company_name": e, "job_path": f"/{i}", "id_icims": i}).company
+             for i, e in enumerate(["ADCI - Karnataka", "ADCI HYD 13 SEZ",
+                                    "ADSIPL - Telangana"])}
+    assert names == {"Amazon"}

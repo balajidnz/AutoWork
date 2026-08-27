@@ -136,7 +136,23 @@ its requirements your resume does not evidence, and what to do about it.
 
 Your decisions are saved. Close it and come back whenever.
 
-To refresh with new postings, run `poll` and `rank` again. Once a day is plenty.
+**New roles are pinned to the top** with a NEW tag, above everything you have
+already looked at. That set stays put while you work and refreshes the next
+time you open it, so glancing at the page twice does not lose your place.
+
+**Nothing here is metered.** Every source is a public endpoint read without an
+API key — company career pages, Amazon's job search, LinkedIn — and the work
+happens on your own machine. Fetching costs you a minute or two and nothing
+else. The button will not run more than once every 15 minutes, because boards
+that publish for free do not deserve a request every thirty seconds and
+LinkedIn rate-limits an address that asks too often.
+
+**When the list goes stale, the page says so** and offers a *Fetch new roles*
+button. Worth knowing why: the scheduled morning email runs on GitHub's
+machines and throws its database away, so nothing reaches your laptop unless
+you fetch here. A console left alone was quietly showing thirteen-day-old
+roles. The button polls, re-scores and clears out closed roles — a minute or
+two. `uv run autowork poll && uv run autowork rank` does the same thing.
 
 ---
 

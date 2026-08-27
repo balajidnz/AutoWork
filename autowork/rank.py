@@ -82,35 +82,85 @@ _YEARS = re.compile(
     re.I,
 )
 _MONTHS = re.compile(r"(\d{1,2})\s*\+?\s*months?\b", re.I)
-_EXP_CONTEXT = re.compile(r"experien|background|track record|working with|professional", re.I)
+
+# What a real requirement sits next to. Deliberately wider than "experience":
+# "5+ years in SRE, production operations" and "5+ years in ML systems" are
+# both genuine bars carrying none of the original keywords, and both were
+# observed passing the gate on a live corpus.
+_EXP_CONTEXT = re.compile(
+    r"experien|background|track record|professional|"
+    r"years?\s+(?:in|of|with|as|building|developing|designing|leading|writing)|"
+    r"minimum|at least|require|qualif|must have|you have|looking for|seeking",
+    re.I,
+)
+
+# A number of years next to something that is not a requirement at all. An
+# allowlist alone cannot separate these, because "Generous equity grant vested
+# over 4 years" sits inches from the word "experience" in a benefits list.
+_NOT_EXPERIENCE = re.compile(
+    r"vest|equity|stock|option grant|founded|anniversar|heritage|"
+    r"years later|years ago|family company|in business|warrant|lease|"
+    r"pto|paid time off|holiday|parental|maternity|notice period",
+    re.I,
+)
+
+# "Software Engineer (5-7 years)", "SDE - 4+ yrs". The most explicit statement
+# a posting makes about seniority, and it was being ignored entirely.
+_TITLE_YEARS = re.compile(r"(\d{1,2})\s*(?:\+|-|–|to)?\s*(\d{1,2})?\s*\+?\s*(?:years?|yrs?)", re.I)
 
 
-def required_years(text: str | None) -> float | None:
-    """Lowest experience bar the description states, in years.
+# Greenhouse and Lever emit markdown-escaped punctuation, so "2-5 years"
+# arrives as "2\\-5 years". The range regex cannot cross the backslash: it
+# skipped the 2, matched "5 years", and read the top of the range as the bar —
+# turning a role squarely in the stretch band into a five-year one.
+_MD_ESCAPE = re.compile(r"\\([-.+()\[\]])")
 
-    Descriptions routinely list several ("2+ years overall, 5+ with Go"), and
-    the minimum is the one worth filtering on — a candidate who clears the
-    lowest bar is usually worth an application. Figures are only counted when
-    they sit near experience language, which keeps "founded 10 years ago" out.
-    """
-    if not text:
-        return None
-    found: list[float] = []
+
+def _mentions(text: str) -> list[tuple[int, float]]:
+    """(position, years) for every plausible experience bar, in document order."""
+    text = _MD_ESCAPE.sub(r"\1", text)
+    out: list[tuple[int, float]] = []
     for match in _YEARS.finditer(text):
         window = text[max(0, match.start() - 90) : match.end() + 90]
-        if not _EXP_CONTEXT.search(window):
+        if _NOT_EXPERIENCE.search(window) or not _EXP_CONTEXT.search(window):
             continue
         value = int(match.group(1))
         if 0 < value <= 20:
-            found.append(float(value))
+            out.append((match.start(), float(value)))
     for match in _MONTHS.finditer(text):
         window = text[max(0, match.start() - 90) : match.end() + 90]
-        if not _EXP_CONTEXT.search(window):
+        if _NOT_EXPERIENCE.search(window) or not _EXP_CONTEXT.search(window):
             continue
         months = int(match.group(1))
         if 0 < months <= 120:
-            found.append(months / 12)
-    return min(found) if found else None
+            out.append((match.start(), months / 12))
+    out.sort()
+    return out
+
+
+def required_years(text: str | None, title: str | None = None) -> float | None:
+    """The experience bar this posting states, in years.
+
+    Two rules, both learned from postings that got through:
+
+    **The title wins.** "Software Engineer (5-7 years)" is the most explicit
+    thing a posting says about seniority, and reading only the description
+    missed it completely.
+
+    **Otherwise take the first mention, not the smallest.** Postings state a
+    general bar and then narrower ones — "8+ years of software development
+    experience and 3+ years in leading teams" — and the general bar comes
+    first. Taking the minimum read that as a three-year role and ranked it
+    highly for someone with eighteen months.
+    """
+    if title and (match := _TITLE_YEARS.search(title)):
+        value = int(match.group(1))
+        if 0 < value <= 20:
+            return float(value)
+    if not text:
+        return None
+    found = _mentions(text)
+    return found[0][1] if found else None
 
 
 # ----------------------------------------------------------------- location
@@ -392,19 +442,17 @@ def gate_with_tier(job: sqlite3.Row, cfg: dict,
         if not re.search(rf"(?<![a-z])({'|'.join(home_tokens(c))})(?![a-z])", text, re.I):
             return f"location: not {home_city(c)} ({job['location']})", tier
 
-    years = required_years(job["description"])
+    years = required_years(job["description"], job["title"])
     if years is not None and years > c["max_required_years"]:
         if years > c["stretch_max_years"]:
             return f"experience: needs {years:g}+ years", tier
         tier = "stretch"
 
-    if job["posted_at"]:
-        try:
-            age = (datetime.now(UTC) - datetime.fromisoformat(job["posted_at"])).days
-        except ValueError:
-            age = 0
-        if age > c["max_age_days"]:
-            return f"stale: posted {age}d ago", tier
+    # first_seen as the fallback, or an undated LinkedIn row never ages out.
+    age = age_days(job["posted_at"], column(job, "first_seen"))
+    if age is not None and age > c["max_age_days"]:
+        seen = "posted" if job["posted_at"] else "first seen"
+        return f"stale: {seen} {age}d ago", tier
 
     return None, tier
 
@@ -412,23 +460,85 @@ def gate_with_tier(job: sqlite3.Row, cfg: dict,
 # ------------------------------------------------------------------ signals
 
 
-def _freshness(posted_at: str | None) -> tuple[float, str]:
-    if not posted_at:
-        return 0.0, ""
+def column(row, name: str):
+    """Read a column that may not be in this query's projection.
+
+    sqlite3.Row raises IndexError for a missing column and a plain dict raises
+    KeyError, and rows reach the gates from several different SELECTs. Reading
+    `first_seen` directly broke nine tests and would have broken any caller
+    whose query did not happen to include it.
+    """
     try:
-        posted = datetime.fromisoformat(posted_at)
-    except ValueError:
+        return row[name]
+    except (IndexError, KeyError):
+        return None
+
+
+def age_days(posted_at: str | None, first_seen: str | None = None) -> int | None:
+    """How old a posting is, falling back to when we first saw it.
+
+    LinkedIn search returns no post date — 32 rows in a live corpus — and
+    treating those as ageless let them bypass the staleness gate forever and,
+    once scoring decayed by age, float to the very top. `first_seen` is a hard
+    lower bound: the posting existed at least that long ago.
+    """
+    for stamp in (posted_at, first_seen):
+        if not stamp:
+            continue
+        try:
+            when = datetime.fromisoformat(stamp)
+        except ValueError:
+            continue
+        # A bare date parses naive. One adapter emitting "2026-08-25" instead
+        # of a full timestamp raised TypeError here and killed the entire run,
+        # so assume UTC rather than trusting every source to get this right.
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return max((datetime.now(UTC) - when).days, 0)
+    return None
+
+
+def _freshness(posted_at: str | None, first_seen: str | None = None) -> tuple[float, str]:
+    """Small additive nudge. The decisive age handling is the decay multiplier.
+
+    Uses `age_days` rather than parsing here: this function had its own copy of
+    the arithmetic, and a single adapter emitting a naive date crashed the
+    ranking of 24,000 postings through it.
+    """
+    days = age_days(posted_at, first_seen)
+    if days is None:
         return 0.0, ""
-    days = (datetime.now(UTC) - posted).days
     if days <= 2:
         return 10.0, f"posted {days}d ago"
     if days <= 7:
         return 7.0, f"posted {days}d ago"
     if days <= 14:
         return 4.0, f"posted {days}d ago"
-    # No "stale" label here: the age gate already rejects anything genuinely
-    # too old, so everything that reaches scoring is within the window.
     return (1.5 if days <= 30 else 0.0), f"posted {days}d ago"
+
+
+def freshness_multiplier(posted_at: str | None, half_life_days: float = 21.0,
+                         first_seen: str | None = None) -> float:
+    """How much of a posting's fit is still worth having, given its age.
+
+    Freshness was an additive bonus of at most 10 points, which a strong skill
+    match simply outweighed: on a live shortlist the median age was 22 days and
+    a 37-day-old posting sat at number two. For a tool whose whole premise is
+    applying into short queues, that is the wrong answer no matter how well the
+    role fits.
+
+    Decay is the honest shape — the queue keeps growing after a posting goes
+    up, so the same role is worth less the later you reach it. Halving every
+    three weeks keeps a two-week-old strong match above a fresh weak one,
+    without letting a five-week-old role lead the list.
+    """
+    days = age_days(posted_at, first_seen)
+    if days is None:
+        # Nothing to go on at all. Deliberately pessimistic: an undated posting
+        # scored as fresh outranks every dated one, which is how three
+        # undated rows took the top three places on a live shortlist.
+        return 0.5 ** 2
+    return 0.5 ** (days / max(half_life_days, 1.0))
 
 
 def _title_match(title: str, targets: dict[str, int]) -> tuple[float, str]:
@@ -488,7 +598,7 @@ def score_job(job: sqlite3.Row, profile_name: str, cfg: dict, *, ats_only: bool,
     if top_skills:
         result.reasons.append("skills: " + ", ".join(top_skills))
 
-    points, reason = _freshness(job["posted_at"])
+    points, reason = _freshness(job["posted_at"], column(job, "first_seen"))
     result.score += points
     if reason:
         result.reasons.append(reason)
@@ -516,7 +626,7 @@ def score_job(job: sqlite3.Row, profile_name: str, cfg: dict, *, ats_only: bool,
         result.score += 8.0
         result.reasons.append("explicitly entry level")
 
-    years = required_years(job["description"])
+    years = required_years(job["description"], job["title"])
     if years is not None and years <= 1:
         result.score += 5.0
         result.reasons.append(f"asks only {years:g}+ years")
@@ -532,7 +642,9 @@ def score_job(job: sqlite3.Row, profile_name: str, cfg: dict, *, ats_only: bool,
     result.score += points
     result.reasons.append(where)
 
-    result.score = round(max(result.score, 0.0), 2)
+    half_life = float(cfg.get("signals", {}).get("freshness_half_life_days", 21))
+    decay = freshness_multiplier(job["posted_at"], half_life, column(job, "first_seen"))
+    result.score = round(max(result.score, 0.0) * decay, 2)
     return result
 
 
@@ -579,14 +691,22 @@ def run(conn: sqlite3.Connection, cfg: dict | None = None) -> dict:
 
 
 def shortlist(
-    conn: sqlite3.Connection, limit: int = 40, tier: str | None = "core"
+    conn: sqlite3.Connection, limit: int = 40, tier: str | None = "core",
+    per_company: int | None = 6,
 ) -> list[sqlite3.Row]:
-    """Best-scoring profile per posting, one row each.
+    """Best-scoring profile per posting, one row each, capped per employer.
 
     ROW_NUMBER rather than `score = MAX(score)`: with the subquery form, a job
     that scores *identically* on both resumes matches twice and is listed
     twice. `profile` is in the tiebreak so the winner is stable across runs.
+
+    `per_company` exists because adding Amazon put 136 of 249 rows on the
+    shortlist under one employer — 55% of it, crowding out exactly the smaller
+    companies with short queues that the whole pipeline is built to find. A
+    company that has ten good openings is still only worth a handful of
+    applications, so the cap costs nothing real. Pass None to lift it.
     """
+    cap = per_company if per_company and per_company > 0 else 10_000
     return conn.execute(
         """WITH ranked AS (
                SELECT s.job_id, s.profile, s.score, s.reasons, s.tier,
@@ -595,17 +715,27 @@ def shortlist(
                           ORDER BY s.score DESC, s.profile ASC
                       ) AS rn
                FROM scores s WHERE s.passed = 1 AND (? IS NULL OR s.tier = ?)
+           ),
+           best AS (
+               SELECT j.id, j.company, j.title, j.location, j.url, j.posted_at,
+                      j.first_seen, j.source,
+                      j.remote, j.salary_min, j.salary_max, j.salary_ccy,
+                      j.description,
+                      r.profile AS profile, r.score AS score,
+                      r.reasons AS reasons, r.tier AS tier,
+                      ROW_NUMBER() OVER (
+                          PARTITION BY j.company
+                          ORDER BY r.score DESC, j.posted_at DESC, j.id ASC
+                      ) AS company_rn
+               FROM ranked r
+               JOIN jobs j ON j.id = r.job_id
+               WHERE r.rn = 1
            )
-           SELECT j.id, j.company, j.title, j.location, j.url, j.posted_at,
-                  j.remote, j.salary_min, j.salary_max, j.salary_ccy, j.description,
-                  r.profile AS profile, r.score AS score, r.reasons AS reasons,
-                  r.tier AS tier
-           FROM ranked r
-           JOIN jobs j ON j.id = r.job_id
-           WHERE r.rn = 1
-           ORDER BY r.score DESC, j.posted_at DESC
+           SELECT * FROM best
+           WHERE company_rn <= ?
+           ORDER BY score DESC, posted_at DESC
            LIMIT ?""",
-        (tier, tier, limit),
+        (tier, tier, cap, limit),
     ).fetchall()
 
 

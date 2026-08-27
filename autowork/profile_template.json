@@ -2,8 +2,8 @@
   "_generated": "Written by `autowork setup`. Shared gates come from autowork/profile_template.json; everything else is yours.",
   "candidate": {},
   "constraints": {
-    "max_age_days": 45,
-    "_age_note": "The whole premise is applying into short queues. A posting older than ~6 weeks has either been filled or has a queue hundreds deep, so it is gated out rather than merely scored down.",
+    "max_age_days": 30,
+    "_age_note": "The whole premise is applying into short queues. Measured on a live corpus: at a 45-day gate the median shortlisted role was 22 days old and a 37-day-old posting ranked second. Tightening to 30 cost 13 of 75 roles and capped the oldest at 30.",
     "block_role_terms": [
       "support engineer",
       "technical support",
@@ -231,7 +231,11 @@
       "tool use",
       "mcp"
     ],
-    "_ai_note": "Agent/LLM product experience is the rarest thing on the resume; postings that need it are where the candidate is most differentiated."
+    "_ai_note": "Agent/LLM product experience is the rarest thing on the resume; postings that need it are where the candidate is most differentiated.",
+    "freshness_half_life_days": 14,
+    "_freshness_note": "Score is multiplied by 0.5 ** (age / half_life). Freshness used to be an additive bonus of at most 10 points, which a strong skill match simply outweighed. Decay is the honest shape: the queue keeps growing after a posting goes up.",
+    "max_per_company": 6,
+    "_cap_note": "At most this many roles from one employer reach the shortlist. Adding Amazon put 136 of 249 rows under one company, crowding out the small boards with short queues that the pipeline exists to find."
   },
   "job_search": {
     "_comment": "Keyword search via JobSpy. Measured: of its eight boards only LinkedIn and Indeed return anything for India. Naukri gives 406 recaptcha; Glassdoor, Google, ZipRecruiter and Bayt return zero rows. Indeed is off by default — it has volume but is noisier and rate-limits after ~8 queries from one IP.",
@@ -398,6 +402,22 @@
         "trainee",
         "co-op"
       ]
+    }
+  },
+  "portals": {
+    "_comment": "Companies whose careers site is their own, not an ATS. `verify` cannot reach these; each needs an adapter in autowork/sources/.",
+    "amazon": {
+      "enabled": true,
+      "country": "IND",
+      "queries": [
+        "software development engineer",
+        "software engineer",
+        "front end engineer",
+        "devops",
+        "data engineer"
+      ],
+      "limit": 400,
+      "_note": "Big-company queues are long, which cuts against this project's premise — included because Amazon India hires SDE-1s in volume."
     }
   }
 }

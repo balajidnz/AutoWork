@@ -14,7 +14,7 @@ import sqlite3
 import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +30,7 @@ SEEN_TXT = DATA_DIR / "seen.txt"
 STATUS_JSON = DATA_DIR / "status.json"
 DIGEST_DIR = DATA_DIR / "digest"
 BOARDS_JSON = DATA_DIR / "boards.json"
+VISITS_JSON = DATA_DIR / "visits.json"
 
 # Sources that publish straight from a company's own applicant tracking system.
 # A posting seen *only* from one of these has not reached the aggregators yet,
@@ -283,6 +284,80 @@ def delisted_ids(conn: sqlite3.Connection, grace_hours: int = 30) -> set[str]:
         (*ATS_SOURCES, *ATS_SOURCES, grace_hours / 24),
     ).fetchall()
     return {r["id"] for r in rows}
+
+
+# Long enough that reloading the page during a session keeps the same set of
+# "new" rows, short enough that opening it the next morning gives a fresh one.
+VISIT_GAP_HOURS = 6
+
+
+def visit_window(path: Path = VISITS_JSON, gap_hours: float = VISIT_GAP_HOURS) -> str:
+    """Timestamp to compare against for "new since you last looked".
+
+    Two stamps rather than one. Advancing a single "last visit" on every load
+    means the first reload shows nothing new, which is worse than useless —
+    you would lose the list by glancing at it twice. So the window only rolls
+    forward when a genuinely new session starts, and stays put in between.
+    """
+    stamps = {}
+    if path.exists():
+        try:
+            stamps = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            stamps = {}
+    now = datetime.now(UTC)
+    current = stamps.get("current")
+    previous = stamps.get("previous") or current
+
+    if current:
+        try:
+            idle = (now - datetime.fromisoformat(current)).total_seconds() / 3600
+        except ValueError:
+            idle = gap_hours + 1
+        if idle >= gap_hours:
+            previous, current = current, now.isoformat(timespec="seconds")
+    else:
+        previous = current = now.isoformat(timespec="seconds")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"previous": previous, "current": current},
+                               indent=2) + "\n", encoding="utf-8")
+    return previous
+
+
+def prune(conn: sqlite3.Connection, max_age_days: int = 30) -> dict[str, int]:
+    """Delete postings that are closed or too old to act on.
+
+    The corpus only ever grew: 24,000 rows and a 158MB database, of which the
+    great majority were roles that had closed or aged out weeks earlier. They
+    cost query time on every rank and every console load, and nothing ever
+    looked at them again.
+
+    Two rules, both already used by the gates, so nothing is dropped that could
+    still have surfaced: the board no longer lists it, or it is older than the
+    age cutoff measured from `posted_at` (falling back to `first_seen`).
+    """
+    gone = delisted_ids(conn)
+    cutoff = (datetime.now(UTC) - timedelta(days=max_age_days)).isoformat()
+    old = {
+        r["id"] for r in conn.execute(
+            "SELECT id FROM jobs WHERE COALESCE(posted_at, first_seen) < ?", (cutoff,)
+        )
+    }
+    # Never drop a posting with a decision on it — the tracker reads back
+    # through these rows to show what you applied to and when.
+    keep = set(load_status())
+    doomed = (gone | old) - keep
+
+    before = conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
+    for chunk in (list(doomed)[i:i + 500] for i in range(0, len(doomed), 500)):
+        marks = ",".join("?" * len(chunk))
+        conn.execute(f"DELETE FROM jobs WHERE id IN ({marks})", chunk)
+        conn.execute(f"DELETE FROM scores WHERE job_id IN ({marks})", chunk)
+    conn.commit()
+    return {"before": before, "delisted": len(gone), "aged_out": len(old),
+            "kept_for_status": len(keep & (gone | old)), "removed": len(doomed),
+            "after": before - len(doomed)}
 
 
 def ats_only_keys(conn: sqlite3.Connection) -> set[str]:

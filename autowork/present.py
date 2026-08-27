@@ -113,7 +113,7 @@ def age_text(posted_at: str | None) -> str:
     if not posted_at:
         return ""
     try:
-        days = (datetime.now(UTC) - datetime.fromisoformat(posted_at)).days
+        days = rank.age_days(posted_at)
     except ValueError:
         return ""
     if days == 0:
@@ -147,6 +147,7 @@ def build(conn: sqlite3.Connection) -> dict:
     different job than the one row 3 is showing.
     """
     rows = rank.shortlist(conn, 10_000, tier=None)
+    since = db.visit_window()
     states = db.load_status()
     applied = _applied_companies(rows, states)
     config = rank.load_config()
@@ -194,6 +195,11 @@ def build(conn: sqlite3.Connection) -> dict:
             "bandLabel": label,
             "tier": row["tier"],
             "home": bool(home_re and home_re.search(row["location"] or "")),
+            # Arrived since the previous session, so a daily glance can start
+            # with what changed rather than re-reading the same list.
+            "isNew": (row["first_seen"] or "") > since,
+            "ageDays": rank.age_days(row["posted_at"], row["first_seen"]),
+            "ageEstimated": not row["posted_at"],
             "family": rank.family_of(row["title"], config),
             "resume": resume,
             "resumePath": resume_path,
@@ -228,6 +234,7 @@ def build(conn: sqlite3.Connection) -> dict:
             "postings": conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"],
             "boards": len(db.verified_boards(conn)),
             "homeCity": city,
+            "since": since,
             "families": [
                 {"key": name, "label": (config["role_families"][name].get("label") or name)}
                 for name in rank.selected_families(config)
