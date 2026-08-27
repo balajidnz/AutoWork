@@ -135,7 +135,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "unauthorised — reload the page"}, 403)
             return
         try:
-            if route == "/api/refresh":
+            if route == "/api/followup":
+                self._json(self._followup(json.loads(self._body() or b"{}")))
+            elif route == "/api/refresh":
                 self._json(self._refresh())
             elif route == "/api/advise":
                 self._json(self._advise(json.loads(self._body() or b"{}")))
@@ -245,6 +247,32 @@ class Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=work, daemon=True).start()
         return {"ok": True, "started": True}
+
+    def _followup(self, payload: dict) -> dict:
+        """Stage a follow-up draft in a terminal. Never sends anything.
+
+        The recipient comes from the mailbox, not from the posting: measured on
+        seven real applications, none carried an address, and guessing one is
+        how a follow-up reaches a stranger.
+        """
+        from autowork import tailor as tailor_mod
+
+        position = int(payload.get("position") or 0)
+        tool = "ollama" if payload.get("tool") == "ollama" else "claude"
+        command = (f"uv run autowork followup {position}"
+                   + (f" --ollama {payload.get('model') or 'llama3.1'}"
+                      if tool == "ollama" else ""))
+        ctx = {"title": payload.get("title", "Follow-up"),
+               "company": payload.get("company", ""),
+               "resume": "drafted from the email thread",
+               "missing": [], "position": position}
+        path = tailor_mod.save_prompt(
+            "# Staged by the console; the draft is produced by the command below.\n",
+            ctx, position)
+        script = tailor_mod.runner_script(path, ctx, tool, command_override=command)
+        launched, detail = tailor_mod.launch_terminal(script)
+        return {"ok": True, "launched": launched, "terminal": detail,
+                "script": str(script.relative_to(db.REPO_ROOT))}
 
     def _advise(self, payload: dict) -> dict:
         """Open a model on the question of what to target.

@@ -42,8 +42,11 @@ _ROLE_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                           "figma", "wireframe", "design system")),
     ("Data Analyst", ("data analyst", "dashboard", "tableau", "power bi", "excel model")),
     ("Marketing Manager", ("marketing", "campaign", "seo", "content strategy", "brand")),
-    ("Account Executive", ("account executive", "quota", "pipeline", "b2b sales",
-                           "customer success")),
+    # "pipeline" alone is not a sales signal: data pipelines, CI pipelines and
+    # API pipelines all appear on engineering resumes, and one backend CV was
+    # classified into the sales family because of it.
+    ("Account Executive", ("account executive", "sales quota", "sales pipeline",
+                           "b2b sales", "customer success", "closed won")),
     ("Operations Manager", ("operations manager", "process improvement",
                             "supply chain", "vendor management")),
     ("Recruiter", ("recruiter", "talent acquisition", "sourcing candidates")),

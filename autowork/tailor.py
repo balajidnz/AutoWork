@@ -425,3 +425,58 @@ def advice_prompt(resumes: list[dict], answers: dict) -> str:
         starred=", ".join(
             s for r in resumes for s in (r.get("key_skills") or [])) or "none",
     )
+
+
+FOLLOWUP_PROMPT = """\
+Draft a short follow-up email about a job application.
+
+## The application
+
+Company: {company}
+Role: {title}
+Applied: {days} days ago
+Posting: {url}
+
+## The thread you are replying into
+
+From: {sender}
+Subject: {subject}
+Sent: {date}
+{status}
+
+## My resume
+
+{resume}
+
+## What to write
+
+A reply to that thread. Rules, in order of importance:
+
+1. **Short.** Four sentences at most. A recruiter reads it on a phone between
+   meetings, and length reads as anxiety.
+2. **Give them a reason to reply**, not just a nudge. One specific, concrete
+   thing from my background that maps to what this role needs, in one line.
+   Not a summary of the resume — one thing.
+3. **No pressure and no apology.** Not "just checking in", not "sorry to
+   bother". Say what you want: an update on where the application stands.
+4. **Nothing invented.** Every claim traces to the resume above. If nothing
+   maps cleanly, say less rather than reaching.
+
+Output the subject line and the body, nothing else. Do not send it — I will
+read it first.
+"""
+
+
+def followup_prompt(app: dict, message, resume_text: str) -> str:
+    """Prompt for a follow-up reply into an existing thread."""
+    status = ("They have replied at least once, so this continues a real "
+              "conversation." if message and not message.automated else
+              "This is the automated acknowledgement — no human has replied yet.")
+    return FOLLOWUP_PROMPT.format(
+        company=app.get("company", ""), title=app.get("title", ""),
+        days=app.get("days", "?"), url=app.get("url", ""),
+        sender=(message.sender if message else "unknown"),
+        subject=(message.subject if message else ""),
+        date=(message.date if message else ""),
+        status=status, resume=resume_text[:9000],
+    )

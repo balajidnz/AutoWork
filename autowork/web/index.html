@@ -37,7 +37,11 @@ header { position:sticky; top:0; z-index:20; background:var(--bg);
 /* .wrap carries 80px of bottom padding for the end of the page; the header
    reuses the class and does not want it, or the controls float in dead space. */
 header .wrap { padding-bottom:0; }
-.brand { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.brand { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+/* Always reachable. The banner below only appears once the corpus has gone
+   stale, which meant that on fresh data there was no way to re-run the search
+   at all — exactly when you are sitting there working and a new role lands. */
+.fetch { margin-left:auto; display:flex; align-items:center; gap:8px; }
 h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
 .sub { color:var(--dim); font-size:13px; }
 .stats { margin-left:auto; color:var(--dim); font-size:13px; }
@@ -268,9 +272,17 @@ function detailHTML(j) {
 
     ${j.pay ? `<div class="pay${j.pay.below ? " below" : ""}">${esc(j.pay.text)}</div>` : ""}
 
-    <div class="lab">Tailor your resume for this role</div>
     <div class="note">Send your <b>${esc(j.resume)}</b> resume${
       j.resumePath ? ` — <code>${esc(j.resumePath)}</code>` : ""}.</div>
+    ${j.state === "applied" ? `<div class="lab">Follow up</div>
+    <div class="note">Drafted from the actual email thread — the posting carries
+      no address, so the recipient comes from your mailbox. Nothing is sent.</div>
+    <div class="acts" style="margin-top:6px">
+      <button class="btn" data-act="followup" data-tool="claude">Draft with Claude ↗</button>
+      <button class="btn" data-act="followup" data-tool="ollama">Draft with Ollama ↗</button>
+    </div>` : ""}
+
+    <div class="lab">Tailor your resume for this role</div>
     <div class="acts" style="margin-top:8px">
       <button class="btn" data-act="tailor" data-tool="claude">Tailor in Claude Code ↗</button>
       <button class="btn" data-act="tailor" data-tool="ollama">Tailor with Ollama ↗</button>
@@ -301,12 +313,15 @@ function staleHTML() {
       Fetching new roles — ${esc(r.step || "working…")} This takes a minute or two.</div>`;
   }
   if (r.error) return `<div class="stale">Refresh failed: ${esc(r.error)}</div>`;
+  // Escalation only — the header carries the everyday control.
   const d = view.staleDays;
   if (d == null || d < 1) return "";
+  // States the fact only. The button lives in the header, always reachable —
+  // two identical buttons on screen at once is one too many.
   return `<div class="stale">
-    ${d === 1 ? "These roles were fetched yesterday."
-              : `These roles are <b>${d} days old</b> — nothing new has been fetched since.`}
-    <button data-act="refresh">Fetch new roles</button></div>`;
+    ${d === 1 ? "These roles were fetched yesterday — there may be newer ones."
+              : `These roles are <b>${d} days old</b>. Nothing new has been fetched since.`}
+    </div>`;
 }
 
 function listHTML(rows) {
@@ -339,8 +354,15 @@ function render() {
       <h1>AutoWork</h1>
       <span class="sub">${m.applied || 0} applied · ${(m.postings || 0).toLocaleString()} postings
         from ${m.boards || 0} career pages</span>
-      <button class="btn small" id="editprofile" style="margin-left:auto">
-        ⚙ Your profile &amp; resumes</button>
+      <span class="fetch">
+        ${(view.refresh || {}).running
+          ? `<span class="spin"></span> ${esc((view.refresh || {}).step || "fetching…")}`
+          : `<span class="note">${view.staleDays == null ? "not fetched yet"
+               : view.staleDays === 0 ? "updated today"
+               : `updated ${view.staleDays}d ago`}</span>
+             <button class="btn small" data-act="refresh">Fetch new roles</button>`}
+      </span>
+      <button class="btn small" id="editprofile">⚙ Your profile &amp; resumes</button>
     </div>
     ${staleHTML()}
     ${(m.followUps || []).length ? `<div class="alert" style="margin:10px 0">⏰ Time to follow up:
@@ -417,6 +439,7 @@ app.addEventListener("click", ev => {
   const id = row.dataset.id;
   if (act === "state") { setState(id, ev.target.dataset.state); return; }
   if (act === "tailor") { runTailor(row, ev.target); return; }
+  if (act === "followup") { runFollowup(row, ev.target); return; }
   if (act === "open") return;              // let the link do its job
   if (act === "toggle") {
     view.open = view.open === id ? null : id;
@@ -424,6 +447,24 @@ app.addEventListener("click", ev => {
     render();
   }
 });
+
+async function runFollowup(row, button) {
+  const job = view.jobs.find(j => j.id === row.dataset.id);
+  const out = row.querySelector(".tailor-out");
+  const label = button.textContent;
+  button.textContent = "Opening…"; button.disabled = true;
+  try {
+    const res = await api("/api/followup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position: job.position, tool: button.dataset.tool,
+                             company: job.company, title: job.title }),
+    });
+    out.innerHTML = res.launched
+      ? "A terminal is open — it reads the thread from your mailbox, drafts a reply, and stops. Nothing is sent."
+      : `Run it yourself: <code>sh ${esc(res.script)}</code>`;
+  } catch (err) { out.textContent = "Failed: " + err.message; }
+  button.textContent = label; button.disabled = false;
+}
 
 async function runTailor(row, button) {
   const job = view.jobs.find(j => j.id === row.dataset.id);

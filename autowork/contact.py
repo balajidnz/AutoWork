@@ -52,9 +52,14 @@ _GENERIC_LOCAL = re.compile(
     re.I,
 )
 # ATS and job-board domains — the posting's plumbing, not the employer.
+# The trailing dot must not immediately follow the brand: Ashby's host is
+# `jobs.ashbyhq.com`, so `ashby\.` never matched and sarvam's contact domain
+# resolved to the applicant tracking system rather than to sarvam. Allow any
+# suffix on the brand before the dot.
 _NOISE_DOMAIN = re.compile(
-    r"(greenhouse|lever|ashby|smartrecruiters|workable|myworkday|icims|taleo"
-    r"|jobvite|bamboohr|recruitee|linkedin|indeed|glassdoor|naukri|example)\.",
+    r"(greenhouse|lever|ashbyhq|ashby|smartrecruiters|workable|myworkdayjobs"
+    r"|myworkday|workday|icims|taleo|jobvite|bamboohr|recruitee|linkedin"
+    r"|indeed|glassdoor|naukri|wellfound|hirist|foundit|instahyre|example)\.",
     re.I,
 )
 

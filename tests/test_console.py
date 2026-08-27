@@ -1156,3 +1156,15 @@ def test_amazon_is_one_employer_not_five() -> None:
              for i, e in enumerate(["ADCI - Karnataka", "ADCI HYD 13 SEZ",
                                     "ADSIPL - Telangana"])}
     assert names == {"Amazon"}
+
+
+def test_refresh_is_reachable_when_the_corpus_is_fresh() -> None:
+    """Regression: the only way to re-run the search was a banner that appears
+    once the data has already gone stale. On a fresh corpus there was no
+    control at all — exactly when you are working and want to check again."""
+    from autowork import server
+
+    html = (server.WEB / "index.html").read_text(encoding="utf-8")
+    header = html.split('class="brand"')[1].split("</header>")[0]
+    assert 'data-act="refresh"' in header, "the header needs its own refresh control"
+    assert "updated today" in header, "it should say when it last fetched"

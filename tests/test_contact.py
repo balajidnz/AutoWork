@@ -106,3 +106,19 @@ def test_cache_round_trips(tmp_path):
                                        generic_emails=["careers@x.com"])}, path)
     assert contact.load(path)["x"].generic_emails == ["careers@x.com"]
     assert contact.load(tmp_path / "missing.json") == {}
+
+
+def test_ats_hosts_are_not_mistaken_for_the_employer():
+    """Ashby serves from `jobs.ashbyhq.com`, so a pattern anchored on `ashby\\.`
+    never matched and one company's contact domain resolved to the applicant
+    tracking system instead of to the company."""
+    for host in ("jobs.ashbyhq.com", "boards.greenhouse.io", "jobs.lever.co",
+                 "myworkdayjobs.com", "api.smartrecruiters.com"):
+        assert contact._NOISE_DOMAIN.search(host + "."), host
+
+
+def test_a_company_whose_name_starts_like_an_ats_is_kept():
+    """The first fix used a wildcard suffix, which would have filtered any
+    employer whose domain merely begins with a vendor's name."""
+    for host in ("levercorp.com", "leverage.io", "ashbygroup.co.uk", "indeedhq.com"):
+        assert not contact._NOISE_DOMAIN.search(host + "."), host

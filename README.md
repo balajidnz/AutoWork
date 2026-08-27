@@ -104,9 +104,17 @@ never appear in another digest. `--dry-run` never touches it.
 
 ## Scheduling
 
-`.github/workflows/digest.yml` runs at 01:30 UTC (07:00 IST) on weekdays, then
+`.github/workflows/digest.yml` runs at 00:17 UTC on weekdays, then
 commits the ledger and the day's digest back to the repo. `workflow_dispatch`
 gives a manual trigger with a dry-run toggle.
+
+**Why 00:17 and not 01:30.** GitHub queues scheduled workflows and drops them
+under load. Measured over 11 runs: this workflow **never once fired on time**
+-- 64 to 129 minutes late, median 74 — and missed 3 of 14 weekdays outright.
+`:00` and `:30` are the most contended minutes, so the slot moved to `:17` and
+back by the median lag, which puts arrival between 06:51 and 07:56 IST instead
+of after 08:00. GitHub promises nothing about scheduled delivery, so a missed
+morning is still possible; `workflow_dispatch` covers it.
 
 Repository secrets:
 
@@ -157,6 +165,29 @@ employer at `signals.max_per_company`.
 Worth saying plainly: a big-company posting is the opposite of this project's
 premise. It is here because Amazon India hires SDE-1s in volume, not because it
 fits the thesis.
+
+## Following up
+
+```sh
+uv run autowork inbox          # per application: acknowledged, replied, or nothing
+uv run autowork followup 1     # draft a reply into the real thread
+```
+
+The obvious design — a "send follow-up" button beside each application — does
+not survive the data. On seven real applications **none** had a usable
+recipient: no person address, no queue address, only a domain. `contact.py`
+refuses to present a guessed address as fact, so there was nothing to put in
+the To: field.
+
+The address is not in the posting; it is in the mailbox, in the acknowledgement
+the ATS already sent. `inbox.py` reads it over IMAP with the same app password
+used for sending — no OAuth, no new dependency — and answers both questions
+that matter: who to reply to, and whether a human has already replied
+(distinguished from an automated acknowledgement by sender and subject).
+
+Three constraints, all enforced in code and covered by tests: the mailbox is
+opened `readonly=True`, only `BODY.PEEK[HEADER]` is fetched while scanning, and
+**nothing is ever sent automatically** — the draft is shown and you send it.
 
 ## Review console
 

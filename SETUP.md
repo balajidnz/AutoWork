@@ -177,6 +177,38 @@ interview.
 
 ---
 
+## Optional: follow up on what you applied to
+
+```
+uv run autowork inbox          # what your mailbox says about each application
+uv run autowork followup 1     # draft a reply into the real thread
+```
+
+This reads your mailbox. It needs the same `.env` credentials as sending — the
+Gmail app password below works for reading too, with no extra setup.
+
+**Why it reads your email at all.** A job posting almost never contains a
+person's address. Measured on seven real applications: not one had a recipient,
+only a company domain. Guessing `firstname.lastname@company.com` bounces, or
+reaches a stranger. The correct address is already in your mailbox, in the
+confirmation their system sent you — so replying into that thread is both
+correct and already threaded.
+
+It also tells you **who has actually replied**, distinguishing a person from an
+automated acknowledgement, so you stop chasing companies that already answered.
+
+Applied roles in the console get **Draft with Claude / Draft with Ollama**,
+which opens a terminal with the draft.
+
+What it will not do:
+
+- **It never sends.** It drafts, shows you the text, and stops. You send it.
+- **It never writes to your mailbox.** Opened read-only; nothing is deleted,
+  moved, or even marked as read, and only message headers are fetched while
+  scanning.
+- **It never invents.** Same rule as resume tailoring: every claim traces to
+  your resume.
+
 ## Optional: get the list sent to you
 
 Instead of opening the page, have it arrive by email or Telegram. Both are

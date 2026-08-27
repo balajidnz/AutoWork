@@ -461,6 +461,105 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_inbox(args: argparse.Namespace) -> int:
+    """What the mailbox knows about each application."""
+    from autowork import contact as contact_mod
+    from autowork import inbox as inbox_mod
+
+    conn = db.connect()
+    apps = track.load(conn)
+    if not apps:
+        print("nothing applied to yet — mark roles applied in the console")
+        return 0
+
+    try:
+        client = inbox_mod.connect()
+    except Exception as exc:  # noqa: BLE001 — credentials or network
+        print(f"could not open the mailbox: {exc}", file=sys.stderr)
+        return 1
+
+    cache = contact_mod.load()
+    try:
+        for app in apps:
+            row = conn.execute("SELECT company, title, url, description FROM jobs "
+                               "WHERE id = ?", (app.job_id,)).fetchone()
+            company = row["company"] if row else app.company
+            entry = cache.get(db.company_slug(company))
+            domain = entry.domain if entry else None
+            convo = inbox_mod.conversation(client, company, domain)
+
+            mark = "replied" if convo.replied else (
+                "acknowledged" if convo.messages else "nothing found")
+            print(f"{company[:22]:<22} {app.state:<10} {app.days_since:>3}d  {mark}")
+            for message in convo.messages[-3:]:
+                who = "auto" if message.automated else "PERSON"
+                print(f"    {who:<7} {message.date[:16]:<17} {message.sender[:38]}")
+                print(f"            {message.subject[:64]}")
+    finally:
+        client.logout()
+    return 0
+
+
+def cmd_followup(args: argparse.Namespace) -> int:
+    """Draft a follow-up into the real thread. Never sends it."""
+    from autowork import contact as contact_mod
+    from autowork import inbox as inbox_mod
+    from autowork import tailor as tailor_mod
+
+    conn = db.connect()
+    apps = [a for a in track.load(conn) if a.state == "applied"]
+    if not 1 <= args.n <= len(apps):
+        for i, a in enumerate(apps, 1):
+            print(f"  {i}. {a.company} — applied {a.days_since}d ago", file=sys.stderr)
+        print(f"pick 1..{len(apps)}", file=sys.stderr)
+        return 1
+    app = apps[args.n - 1]
+
+    row = conn.execute("SELECT company, title, url, description FROM jobs WHERE id = ?",
+                       (app.job_id,)).fetchone()
+    company = row["company"] if row else app.company
+    entry = contact_mod.load().get(db.company_slug(company))
+
+    try:
+        client = inbox_mod.connect()
+    except Exception as exc:  # noqa: BLE001
+        print(f"could not open the mailbox: {exc}", file=sys.stderr)
+        return 1
+    try:
+        convo = inbox_mod.conversation(client, company, entry.domain if entry else None)
+    finally:
+        client.logout()
+
+    target = convo.reply_to
+    if not target:
+        print(f"no message from {company} in the mailbox — nothing to reply into.\n"
+              "That is the honest answer: without a thread there is no address "
+              "worth writing to, and guessing one is how a follow-up reaches a "
+              "stranger.", file=sys.stderr)
+        return 1
+
+    cfg = rank.load_config()
+    profile = cfg["profiles"].get(row["profile"] if row and "profile" in row.keys()
+                                  else next(iter(cfg["profiles"])))
+    resume = tailor_mod._resume_path(profile or {})
+    prompt = tailor_mod.followup_prompt(
+        {"company": company, "title": row["title"] if row else "",
+         "days": app.days_since, "url": row["url"] if row else ""},
+        target,
+        resume.read_text(encoding="utf-8") if resume and resume.exists() else "",
+    )
+
+    print(f"# replying into: {target.sender}", file=sys.stderr)
+    print(f"# subject:       {target.subject}", file=sys.stderr)
+    if not args.ollama:
+        print(prompt)
+        print("\n# ^ prompt only. Nothing has been sent.", file=sys.stderr)
+        return 0
+    print(tailor_mod.run_ollama(prompt, args.ollama))
+    print("\n# ^ draft only. Read it, then send it yourself.", file=sys.stderr)
+    return 0
+
+
 def cmd_prune(args: argparse.Namespace) -> int:
     """Delete closed and aged-out postings from the local database."""
     conn = db.connect()
@@ -697,6 +796,14 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("whoami", help="print your profile context (used by /fit and /tailor)")
     p.set_defaults(func=cmd_whoami)
+
+    p = sub.add_parser("inbox", help="what your mailbox says about each application")
+    p.set_defaults(func=cmd_inbox)
+
+    p = sub.add_parser("followup", help="draft a follow-up into the real email thread")
+    p.add_argument("n", type=int, help="which application (see `autowork inbox`)")
+    p.add_argument("--ollama", metavar="MODEL", help="draft with a local model")
+    p.set_defaults(func=cmd_followup)
 
     p = sub.add_parser("prune", help="delete closed and aged-out postings")
     p.add_argument("--max-age", type=int, help="override max_age_days")

@@ -102,6 +102,40 @@ def _auth_hint(password: str) -> str:
     return "rejected — app password looks well-formed; check SMTP_USER matches the account that generated it"
 
 
+def send_reply(to: str, subject: str, body: str, *, in_reply_to: str = "",
+               references: str = "", host: str = "smtp.gmail.com",
+               port: int = 587) -> Result:
+    """Send one message, threaded into an existing conversation if given.
+
+    Never called without the text having been shown first. Drafting is
+    automatic; sending is not — an agent that mails recruiters on someone's
+    behalf unread is not a feature anybody asked for.
+    """
+    user, password = os.environ.get("SMTP_USER"), smtp_password()
+    if not (user and password):
+        return Result("email", False, "SMTP_USER / SMTP_PASS not set")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"], msg["To"] = user, to
+    if in_reply_to:
+        # Both headers: Gmail threads on References, some clients on In-Reply-To.
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = (references + " " + in_reply_to).strip()
+    msg.set_content(body)
+
+    try:
+        with smtplib.SMTP(host, port, timeout=30) as smtp:
+            smtp.starttls()
+            smtp.login(user, password)
+            smtp.send_message(msg)
+    except smtplib.SMTPAuthenticationError as exc:
+        return Result("email", False, f"{exc.smtp_code} {_auth_hint(password)}")
+    except Exception as exc:  # noqa: BLE001
+        return Result("email", False, f"{type(exc).__name__}: {exc}")
+    return Result("email", True, to)
+
+
 # ------------------------------------------------------------------ telegram
 
 

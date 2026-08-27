@@ -1,10 +1,22 @@
 name: Morning digest
 
 on:
-  # 01:30 UTC == 07:00 IST, weekdays only. Postings skew to weekday mornings,
-  # and skipping weekends keeps the run count (and any metered source) down.
+  # 00:17 UTC, weekdays only. Postings skew to weekday mornings, and skipping
+  # weekends keeps the run count (and any metered source) down.
+  #
+  # The odd minute and the early slot are both deliberate, from 11 runs of
+  # measurement. GitHub queues scheduled workflows and drops them under load:
+  # this one missed 3 of 14 weekdays at "30 1" and NEVER fired on time — 64 to
+  # 129 minutes late, median 74. `:00` and `:30` are the most contended minutes
+  # on the platform, so `:17` is chosen to sit away from every common boundary,
+  # and the slot is set 74 minutes before the intended 01:30 UTC so the usual
+  # lag lands the digest near 07:00 IST rather than after 08:00.
+  #
+  # Observed spread puts arrival between 06:50 and 07:55 IST. GitHub promises
+  # nothing about scheduled delivery, so a missed morning is still possible —
+  # trigger it by hand from the Actions tab when that happens.
   schedule:
-    - cron: "30 1 * * 1-5"
+    - cron: "17 0 * * 1-5"
   workflow_dispatch:
     inputs:
       dry_run:
